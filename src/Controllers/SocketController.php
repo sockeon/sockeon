@@ -20,12 +20,14 @@ abstract class SocketController
      * Instance of the server
      * @var Server
      */
-    protected Server $server;
+    private Server $server;
 
     /**
      * Sets the server instance for this controller
      * 
-     * @param Server $server The server instance
+     * This method is called by the server when registering the controller
+     * 
+     * @param Server $server The server instance to set
      * @return void
      */
     public function setServer(Server $server): void
@@ -97,5 +99,30 @@ abstract class SocketController
     public function disconnectClient(int $clientId): void
     {
         $this->server->disconnectClient($clientId);
+    }
+
+    /**
+     * Gets data for a specific client
+     * 
+     * @param int $clientId The ID of the client to get data for
+     * @param string|null $key Optional key to retrieve specific data
+     * @return mixed The data for the client, or null if not found
+     */
+    public function getClientData(int $clientId, ?string $key = null): mixed
+    {
+        return $this->server->getClientData($clientId, $key);
+    }
+
+    /**
+     * Sets data for a specific client
+     * 
+     * @param int $clientId The ID of the client to set data for
+     * @param string $key The key to set in the client's data
+     * @param mixed $value The value to set for the key
+     * @return void
+     */
+    public function setClientData(int $clientId, string $key, mixed $value): void
+    {
+        $this->server->setClientData($clientId, $key, $value);
     }
 }

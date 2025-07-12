@@ -92,7 +92,7 @@ test('websocket client data persists', function () {
         #[SocketOn('user.login')]
         public function handleLogin(int $clientId, array $data): bool
         {
-            $this->server->setClientData($clientId, 'user', [
+            $this->setClientData($clientId, 'user', [
                 'id' => $data['userId'] ?? null,
                 'name' => $data['name'] ?? 'anonymous'
             ]);

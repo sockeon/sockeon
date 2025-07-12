@@ -1,5 +1,6 @@
 <?php
 
+use Sockeon\Sockeon\Config\ServerConfig;
 use Sockeon\Sockeon\Connection\Server;
 use Sockeon\Sockeon\Logging\Logger;
 use Tests\TestCase;
@@ -17,11 +18,12 @@ pest()
         $logger = new Logger();
         $logger->setLogToConsole(false);
 
-        $this->server = new Server( //@phpstan-ignore-line
-            host: '127.0.0.1',
-            port: $port,
-            logger: $logger,
-        );
+        $serverConfig = new ServerConfig();
+        $serverConfig->port = $port;
+        $serverConfig->host = '127.0.0.1';
+        $serverConfig->logger = $logger;
+
+        $this->server = new Server($serverConfig); //@phpstan-ignore-line
     })
     ->in('Feature', 'Unit', 'Integration');
 
