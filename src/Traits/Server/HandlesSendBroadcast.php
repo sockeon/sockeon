@@ -21,6 +21,21 @@ trait HandlesSendBroadcast
     }
 
     /**
+     * Send raw message data to a specific client
+     * 
+     * @param int $clientId The client ID to send to
+     * @param string $message Raw message data
+     * @return void
+     */
+    public function sendToClient(int $clientId, string $message): void
+    {
+        if (isset($this->clients[$clientId]) && ($this->clientTypes[$clientId] ?? '') === 'ws' && is_resource($this->clients[$clientId])) {
+            $frame = $this->wsHandler->encodeWebSocketFrame($message, 1);
+            fwrite($this->clients[$clientId], $frame);
+        }
+    }
+
+    /**
      * Broadcast a WebSocket message to multiple clients, optionally filtered by namespace and room
      * 
      * @param string $event Event name

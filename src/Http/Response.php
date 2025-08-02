@@ -374,6 +374,21 @@ class Response
     }
     
     /**
+     * Create a 429 Too Many Requests response
+     * 
+     * @param mixed $data The error message or data
+     * @param array<string, string> $headers Additional headers
+     * @return self
+     */
+    public static function tooManyRequests(mixed $data = 'Too Many Requests', array $headers = []): self
+    {
+        if (is_string($data)) {
+            $data = ['error' => $data];
+        }
+        return self::json($data, 429, $headers);
+    }
+    
+    /**
      * Create a redirect response
      * 
      * @param string $url The URL to redirect to

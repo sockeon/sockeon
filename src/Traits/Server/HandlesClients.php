@@ -105,28 +105,32 @@ trait HandlesClients
     {
         foreach ($read as $client) {
             $clientId = (int)$client;
-
+            
             try {
                 $data = fread($client, 8192);
-
+                
                 if ($data === '' || $data === false) {
                     $this->disconnectClient($clientId);
                     continue;
                 }
-
-                if (!isset($this->clientBuffers[$clientId])) {
-                    $this->clientBuffers[$clientId] = '';
-                    $this->clientBufferTimestamps[$clientId] = microtime(true);
-                }
-                $this->clientBuffers[$clientId] .= $data;
-
-                if ($this->isCompleteHttpRequest($this->clientBuffers[$clientId])) {
-                    $this->handleHttpWs($clientId, $client, $this->clientBuffers[$clientId]);
-                    unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
+                
+                if (($this->clientTypes[$clientId] ?? 'unknown') === 'ws') {
+                    $this->handleHttpWs($clientId, $client, $data);
                 } else {
-                    if (microtime(true) - $this->clientBufferTimestamps[$clientId] > 30) {
-                        $this->logger->warning("Client buffer timeout for client: $clientId");
-                        $this->disconnectClient($clientId);
+                    if (!isset($this->clientBuffers[$clientId])) {
+                        $this->clientBuffers[$clientId] = '';
+                        $this->clientBufferTimestamps[$clientId] = microtime(true);
+                    }
+                    $this->clientBuffers[$clientId] .= $data;
+                    
+                    if ($this->isCompleteHttpRequest($this->clientBuffers[$clientId])) {
+                        $this->handleHttpWs($clientId, $client, $this->clientBuffers[$clientId]);
+                        unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
+                    } else {
+                        if (microtime(true) - $this->clientBufferTimestamps[$clientId] > 30) {
+                            $this->logger->warning("Client buffer timeout for client: $clientId");
+                            $this->disconnectClient($clientId);
+                        }
                     }
                 }
             } catch (Throwable $e) {
@@ -249,5 +253,27 @@ trait HandlesClients
         }
 
         return $key === null ? $this->clientData[$clientId] : ($this->clientData[$clientId][$key] ?? null);
+    }
+
+    /**
+     * Get the IP address of a client
+     * 
+     * @param int $clientId The client ID
+     * @return string|null The client IP address or null if not found
+     */
+    public function getClientIpAddress(int $clientId): ?string
+    {
+        if (!isset($this->clients[$clientId]) || !is_resource($this->clients[$clientId])) {
+            return null;
+        }
+
+        $peerName = stream_socket_get_name($this->clients[$clientId], true);
+        if ($peerName === false) {
+            return null;
+        }
+
+        // Extract IP from the peer name (format: "ip:port")
+        $parts = explode(':', $peerName);
+        return $parts[0];
     }
 }

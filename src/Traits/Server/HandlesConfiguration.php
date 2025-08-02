@@ -30,6 +30,8 @@ trait HandlesConfiguration
             Config::setAuthKey($config->authKey);
         }
 
+        $this->rateLimitConfig = $config->rateLimitConfig;
+
         $this->logger = $config->logger ?? new Logger(
             minLogLevel: $this->isDebug ? LogLevel::DEBUG : LogLevel::INFO,
             logToConsole: true,
@@ -46,6 +48,11 @@ trait HandlesConfiguration
         $this->httpHandler = new HttpHandler($this, $config->cors);
         $this->namespaceManager = new NamespaceManager();
         $this->middleware = new Middleware();
+
+        if ($this->rateLimitConfig && $this->rateLimitConfig->isEnabled()) {
+            $this->middleware->addHttpMiddleware(\Sockeon\Sockeon\Http\Middleware\HttpRateLimitMiddleware::class);
+            $this->middleware->addWebSocketMiddleware(\Sockeon\Sockeon\WebSocket\Middleware\WebSocketRateLimitMiddleware::class);
+        }
     }
 
     /**

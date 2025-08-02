@@ -343,30 +343,55 @@ class Request
     /**
      * Get client IP address
      * 
-     * @return string|null The client IP address or null
+     * @param bool $fallbackToDefault Whether to return a default IP if none found
+     * @return string|null The client IP address or null/default
      */
-    public function getIpAddress(): ?string
+    public function getIpAddress(bool $fallbackToDefault = false): ?string
     {
-        $headers = [
-            'HTTP_CLIENT_IP',
-            'HTTP_X_FORWARDED_FOR',
-            'HTTP_X_FORWARDED',
-            'HTTP_X_CLUSTER_CLIENT_IP',
-            'HTTP_FORWARDED_FOR',
-            'HTTP_FORWARDED',
-            'REMOTE_ADDR'
+        $ipHeaders = [
+            'HTTP_CF_CONNECTING_IP',     // Cloudflare
+            'HTTP_CLIENT_IP',            // Proxy
+            'HTTP_X_FORWARDED_FOR',      // Load balancer/proxy
+            'HTTP_X_FORWARDED',          // Proxy
+            'HTTP_X_CLUSTER_CLIENT_IP',  // Cluster
+            'HTTP_FORWARDED_FOR',        // Proxy
+            'HTTP_FORWARDED',            // Proxy
+            'REMOTE_ADDR'                // Standard
         ];
-        
-        foreach ($headers as $header) {
-            if (isset($_SERVER[$header])) {
-                $ip = filter_var($_SERVER[$header], FILTER_VALIDATE_IP);
-                if ($ip !== false) {
+
+        foreach ($ipHeaders as $header) {
+            $ip = $this->getHeader($header);
+            if (is_string($ip) && $ip !== '' && $ip !== 'unknown') {
+                if (str_contains($ip, ',')) {
+                    $ip = trim(explode(',', $ip)[0]);
+                }
+                
+                if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                    return $ip;
+                }
+                
+                if (filter_var($ip, FILTER_VALIDATE_IP)) {
                     return $ip;
                 }
             }
         }
+
+        foreach ($ipHeaders as $header) {
+            if (isset($_SERVER[$header])) {
+                $ip = $_SERVER[$header];
+                if (is_string($ip) && $ip !== '' && $ip !== 'unknown') {
+                    if (str_contains($ip, ',')) {
+                        $ip = trim(explode(',', $ip)[0]);
+                    }
+                    
+                    if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                        return $ip;
+                    }
+                }
+            }
+        }
         
-        return null;
+        return $fallbackToDefault ? '127.0.0.1' : null;
     }
 
     /**

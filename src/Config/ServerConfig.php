@@ -47,4 +47,9 @@ class ServerConfig
      * Optional authentication key for securing connections.
      */
     public ?string $authKey = null;
+
+    /**
+     * Rate limiting configuration. If null, rate limiting is disabled.
+     */
+    public ?RateLimitConfig $rateLimitConfig = null;
 }

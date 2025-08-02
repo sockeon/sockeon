@@ -3,6 +3,7 @@
 namespace Sockeon\Sockeon\Connection;
 
 use RuntimeException;
+use Sockeon\Sockeon\Config\RateLimitConfig;
 use Sockeon\Sockeon\Config\ServerConfig;
 use Sockeon\Sockeon\Contracts\LoggerInterface;
 use Sockeon\Sockeon\Core\Middleware;
@@ -55,6 +56,8 @@ class Server
     protected bool $isDebug;
     
     protected LoggerInterface $logger;
+
+    protected ?RateLimitConfig $rateLimitConfig = null;
 
     public function __construct(ServerConfig $config)
     {
@@ -128,5 +131,25 @@ class Server
     public function getClientType(int $clientId): ?string
     {
         return $this->clientTypes[$clientId] ?? null;
+    }
+
+    /**
+     * Get the rate limiting configuration
+     * 
+     * @return RateLimitConfig|null The rate limiting configuration or null if disabled
+     */
+    public function getRateLimitConfig(): ?RateLimitConfig
+    {
+        return $this->rateLimitConfig;
+    }
+
+    /**
+     * Check if rate limiting is enabled
+     * 
+     * @return bool True if rate limiting is enabled, false otherwise
+     */
+    public function isRateLimitingEnabled(): bool
+    {
+        return $this->rateLimitConfig !== null && $this->rateLimitConfig->isEnabled();
     }
 }
