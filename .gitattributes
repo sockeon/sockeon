@@ -15,7 +15,7 @@
 * export-ignore
 
 # Allow only these files in git archive / Composer dist
-/src/** -export-ignore
-/composer.json -export-ignore
-/README.md -export-ignore
-/LICENSE -export-ignore
+src/ -export-ignore
+composer.json -export-ignore
+README.md -export-ignore
+LICENSE -export-ignore
