@@ -11,11 +11,19 @@
 *.stub linguist-language=php
 *.neon.dist linguist-language=neon
 
-# Export-ignore everything by default
-* export-ignore
-
-# Allow only these files in git archive / Composer dist
-src/ -export-ignore
-composer.json -export-ignore
-README.md -export-ignore
-LICENSE -export-ignore
+# Export-ignore specific files and directories
+/tests export-ignore
+/vendor export-ignore
+/.idea export-ignore
+/.vscode export-ignore
+/bin export-ignore
+/examples export-ignore
+/docs export-ignore
+/mcp export-ignore
+/.gitignore export-ignore
+/.gitattributes export-ignore
+/phpunit.xml export-ignore
+/phpstan.neon export-ignore
+/Makefile export-ignore
+/.php-cs-fixer.cache export-ignore
+/.github export-ignore
