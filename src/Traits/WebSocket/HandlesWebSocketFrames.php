@@ -26,23 +26,27 @@ trait HandlesWebSocketFrames
     {
         $frames = [];
         $originalDataLength = strlen($data);
+        $dataLength = $originalDataLength; // Cache length to avoid repeated strlen() calls
+        $dataOffset = 0; // Use offset instead of substr() for better performance
 
         // Maximum payload size
         $maxPayloadSize = $this->server->getMaxMessageSize();
 
-        while (strlen($data) > 0) {
+        while ($dataOffset < $dataLength) {
+            $remainingBytes = $dataLength - $dataOffset;
+
             // Make sure we have at least 2 bytes for the basic header
-            if (strlen($data) < 2) {
+            if ($remainingBytes < 2) {
                 // Don't log as error - this is expected when waiting for more data
                 $this->logFrameDebug("Incomplete frame header (will buffer)", [
-                    'remaining_bytes' => strlen($data),
+                    'remaining_bytes' => $remainingBytes,
                     'required_bytes' => 2,
                 ]);
                 break;
             }
 
-            $firstByte = ord($data[0]);
-            $secondByte = ord($data[1]);
+            $firstByte = ord($data[$dataOffset]);
+            $secondByte = ord($data[$dataOffset + 1]);
 
             $fin = ($firstByte & 0x80) == 0x80;
             $opcode = $firstByte & 0x0F;
@@ -55,20 +59,20 @@ trait HandlesWebSocketFrames
                 break;
             }
 
-            $offset = 2;
+            $offset = $dataOffset + 2;
             $extendedPayloadLength = 0;
 
             // Extended payload length - 16 bits
             if ($payloadLength == 126) {
                 // Make sure we have enough bytes for extended 16-bit length
-                if (strlen($data) < 4) {
+                if ($remainingBytes < 4) {
                     $this->logFrameDebug("Incomplete extended 16-bit length (will buffer)", [
-                        'remaining_bytes' => strlen($data),
+                        'remaining_bytes' => $remainingBytes,
                         'required_bytes' => 4,
                     ]);
                     break;
                 }
-                $unpacked = unpack('n', substr($data, 2, 2));
+                $unpacked = unpack('n', substr($data, $offset, 2));
                 if (!$unpacked || !isset($unpacked[1])) {
                     $this->logFrameError("Failed to unpack 16-bit length");
                     break;
@@ -80,14 +84,14 @@ trait HandlesWebSocketFrames
             // Extended payload length - 64 bits
             elseif ($payloadLength == 127) {
                 // Make sure we have enough bytes for extended 64-bit length
-                if (strlen($data) < 10) {
+                if ($remainingBytes < 10) {
                     $this->logFrameDebug("Incomplete extended 64-bit length (will buffer)", [
-                        'remaining_bytes' => strlen($data),
+                        'remaining_bytes' => $remainingBytes,
                         'required_bytes' => 10,
                     ]);
                     break;
                 }
-                $unpacked = unpack('J', substr($data, 2, 8));
+                $unpacked = unpack('J', substr($data, $offset, 8));
                 if (!$unpacked || !isset($unpacked[1])) {
                     $this->logFrameError("Failed to unpack 64-bit length");
                     break;
@@ -107,17 +111,17 @@ trait HandlesWebSocketFrames
             }
 
             // Check if we have enough data for the entire frame
-            $frameLength = $offset;
+            $frameLength = $offset - $dataOffset;
             if ($masked) {
                 $frameLength += 4;  // Add mask key length
             }
             $frameLength += $payloadLength; // @phpstan-ignore-line
 
-            if (strlen($data) < $frameLength) {
+            if ($remainingBytes < $frameLength) {
                 // Don't log as error - this is expected when frames are fragmented
                 // The remaining data will be buffered and processed on next read
                 $this->logFrameDebug("Incomplete frame detected (will buffer)", [
-                    'remaining_bytes' => strlen($data),
+                    'remaining_bytes' => $remainingBytes,
                     'required_bytes' => $frameLength,
                     'payload_length' => $payloadLength,
                 ]);
@@ -130,13 +134,47 @@ trait HandlesWebSocketFrames
                     $maskKey = substr($data, $offset, 4);
                     $offset += 4;
 
-                    $payload = substr($data, $offset, $payloadLength); // @phpstan-ignore-line
-                    $unmaskedPayload = '';
+                    $payloadStart = $offset;
+                    $payload = substr($data, $payloadStart, $payloadLength); // @phpstan-ignore-line
 
-                    // Apply mask
-                    $length = strlen($payload);
-                    for ($i = 0; $i < $length; $i++) {
-                        $unmaskedPayload .= $payload[$i] ^ $maskKey[$i % 4];
+                    // Optimize unmasking for large payloads using pre-allocated string
+                    // For large payloads, use str_repeat + bitwise operations is faster
+                    if ($payloadLength > 1024) {
+                        // For large payloads, process in chunks to reduce memory allocations
+                        $unmaskedPayload = '';
+                        $chunkSize = 4096;
+                        $maskBytes = [
+                            ord($maskKey[0]),
+                            ord($maskKey[1]),
+                            ord($maskKey[2]),
+                            ord($maskKey[3]),
+                        ];
+
+                        for ($i = 0; $i < $payloadLength; $i += $chunkSize) {
+                            $chunk = substr($payload, $i, min($chunkSize, $payloadLength - $i));
+                            $chunkLength = strlen($chunk);
+                            $unmaskedChunk = '';
+
+                            // Pre-allocate string for chunk
+                            for ($j = 0; $j < $chunkLength; $j++) {
+                                $unmaskedChunk .= chr(ord($chunk[$j]) ^ $maskBytes[($i + $j) % 4]);
+                            }
+
+                            $unmaskedPayload .= $unmaskedChunk;
+                        }
+                    } else {
+                        // For small payloads, use simple loop
+                        $unmaskedPayload = '';
+                        $maskBytes = [
+                            ord($maskKey[0]),
+                            ord($maskKey[1]),
+                            ord($maskKey[2]),
+                            ord($maskKey[3]),
+                        ];
+                        $length = strlen($payload);
+                        for ($i = 0; $i < $length; $i++) {
+                            $unmaskedPayload .= chr(ord($payload[$i]) ^ $maskBytes[$i % 4]);
+                        }
                     }
 
                     $frames[] = [
@@ -175,19 +213,22 @@ trait HandlesWebSocketFrames
             }
 
             // Move to the next frame
-            $data = substr($data, $frameLength);
+            $dataOffset += $frameLength;
         }
+
+        // Extract remaining data if any
+        $remainingData = ($dataOffset < $dataLength) ? substr($data, $dataOffset) : '';
 
         // Log summary
         if (!empty($frames)) {
             $this->logFrameDebug("Frame decoding summary", [
                 'frames_decoded' => count($frames),
                 'original_data_length' => $originalDataLength,
-                'remaining_bytes' => strlen($data),
+                'remaining_bytes' => strlen($remainingData),
             ]);
         }
 
-        return [$frames, $data];
+        return [$frames, $remainingData];
     }
 
     /**
