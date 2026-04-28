@@ -19,21 +19,29 @@ final class InstallerSetupWizard
 
         $io->write('');
 
+        $ide = $this->askIde($io);
+
+        $io->write('');
+
         $installMcp = $io->askConfirmation(
             'Install MCP config now? [Y/n] ',
             true
         );
 
         if ($installMcp) {
-            $this->writeMcpConfig($projectRoot);
-            $io->write('<info>✔ mcp.json created.</info>');
+            $mcpConfigPath = $this->writeMcpConfig($projectRoot, $ide);
+
+            if ($mcpConfigPath !== null) {
+                $io->write("<info>✔ MCP config created at {$mcpConfigPath}.</info>");
+            } else {
+                $io->write('<comment>⚠ MCP config path is not auto-managed for this IDE.</comment>');
+            }
+
             $io->write('<comment>Install package manually:</comment>');
-            $io->write('<comment>composer require sockeon/mcp</comment>');
+            $io->write('<comment>composer require sockeon/mcp mcp/sdk:"@dev"</comment>');
         }
 
         $io->write('');
-
-        $ide = $this->askIde($io);
 
         $this->writeRules($projectRoot, $ide);
 
@@ -85,10 +93,17 @@ final class InstallerSetupWizard
         };
     }
 
-    private function writeMcpConfig(string $root): void
+    private function writeMcpConfig(string $root, string $ide): ?string
     {
-        $file = $root . '/mcp.json';
+        $file = $this->getMcpConfigPath($root, $ide);
+
+        if ($file === null) {
+            return null;
+        }
+
         $config = [];
+
+        $this->ensureDirectory($file);
 
         if (is_file($file)) {
             $decoded = json_decode(
@@ -102,18 +117,24 @@ final class InstallerSetupWizard
         }
 
         if (
-            !isset($config['mcpServers']) ||
-            !is_array($config['mcpServers'])
+            !isset($config[$this->getMcpServerKey($ide)]) ||
+            !is_array($config[$this->getMcpServerKey($ide)])
         ) {
-            $config['mcpServers'] = [];
+            $config[$this->getMcpServerKey($ide)] = [];
         }
 
-        $config['mcpServers']['sockeon'] = [
+        $serverConfig = [
             'command' => 'php',
             'args' => [
                 'vendor/sockeon/mcp/public/server.php',
             ],
         ];
+
+        if ($ide === 'vscode') {
+            $serverConfig['type'] = 'stdio';
+        }
+
+        $config[$this->getMcpServerKey($ide)]['sockeon'] = $serverConfig;
 
         file_put_contents(
             $file,
@@ -122,6 +143,28 @@ final class InstallerSetupWizard
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
             ) . PHP_EOL
         );
+
+        return $file;
+    }
+
+    private function getMcpConfigPath(string $root, string $ide): ?string
+    {
+        return match ($ide) {
+            'cursor' => $root . '/.cursor/mcp.json',
+            'vscode' => $root . '/.vscode/mcp.json',
+            'windsurf' => rtrim((string) getenv('HOME'), '/') . '/.codeium/windsurf/mcp_config.json',
+            'zed' => $root . '/.zed/settings.json',
+            default => null,
+        };
+    }
+
+    private function getMcpServerKey(string $ide): string
+    {
+        return match ($ide) {
+            'vscode' => 'servers',
+            'zed' => 'context_servers',
+            default => 'mcpServers',
+        };
     }
 
     private function writeRules(string $root, string $ide): void
@@ -164,11 +207,6 @@ final class InstallerSetupWizard
 - Refactor generated code.
 - Keep architecture clean.
 MD;
-
-        $common = $root . '/.sockeon/sockeon-guidelines.md';
-
-        $this->ensureDirectory($common);
-        file_put_contents($common, $rules);
 
         if ($ide === 'cursor') {
             $cursor = $root . '/.cursor/rules/sockeon-guidelines.mdc';
