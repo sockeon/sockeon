@@ -2,7 +2,6 @@ vendor
 composer.lock
 .idea
 .vscode
-bin
 examples
 docs
 mcp

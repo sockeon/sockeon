@@ -1,0 +1,15 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+use Composer\IO\ConsoleIO;
+use Composer\IO\InputStream;
+use Composer\IO\NullIO;
+use Sockeon\Sockeon\Composer\InstallerSetupWizard;
+
+$wizard = new InstallerSetupWizard();
+
+$wizard->run(new NullIO(), getcwd());
