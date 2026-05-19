@@ -45,7 +45,8 @@
     "require-dev": {
         "pestphp/pest": "^2.0",
         "phpstan/phpstan": "^1.10",
-        "friendsofphp/php-cs-fixer": "^3.0"
+        "friendsofphp/php-cs-fixer": "^3.0",
+        "composer/composer": "^2.3"
     },
     "config": {
         "allow-plugins": {

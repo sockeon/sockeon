@@ -54,9 +54,13 @@ final class SockeonInstallerPlugin implements PluginInterface, EventSubscriberIn
             return;
         }
 
-        $projectRoot = dirname(
-            (string) $this->composer->getConfig()->get('vendor-dir')
-        );
+        $vendorDir = $this->composer->getConfig()->get('vendor-dir');
+
+        if (!is_string($vendorDir)) {
+            return;
+        }
+
+        $projectRoot = dirname($vendorDir);
 
         if (!$this->io->isInteractive()) {
             $this->io->write('');
