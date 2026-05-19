@@ -78,10 +78,8 @@ final class InstallerSetupWizard
         $io->write('[5] Zed');
         $io->write('[6] Neovim');
 
-        $choice = trim((string) $io->ask(
-            'Enter number [1]: ',
-            '1'
-        ));
+        $answer = $io->ask('Enter number [1]: ', '1');
+        $choice = trim(is_string($answer) ? $answer : '1');
 
         return match ($choice) {
             '2' => 'vscode',
@@ -117,8 +115,8 @@ final class InstallerSetupWizard
         }
 
         if (
-            !isset($config[$this->getMcpServerKey($ide)]) ||
-            !is_array($config[$this->getMcpServerKey($ide)])
+            !isset($config[$this->getMcpServerKey($ide)])
+            || !is_array($config[$this->getMcpServerKey($ide)])
         ) {
             $config[$this->getMcpServerKey($ide)] = [];
         }
@@ -180,33 +178,33 @@ final class InstallerSetupWizard
         };
 
         $rules = <<<MD
-# Sockeon Guidelines ({$title})
+            # Sockeon Guidelines ({$title})
 
-## Core Architecture
-- Organize code by modules.
-- Keep controllers thin.
-- Move logic into services.
+            ## Core Architecture
+            - Organize code by modules.
+            - Keep controllers thin.
+            - Move logic into services.
 
-## Realtime Patterns
-- Use namespaced events.
-- Validate payloads.
-- Use explicit room broadcasting.
+            ## Realtime Patterns
+            - Use namespaced events.
+            - Validate payloads.
+            - Use explicit room broadcasting.
 
-## Security
-- Protect private routes.
-- Add rate limiting.
-- Use strict CORS.
+            ## Security
+            - Protect private routes.
+            - Add rate limiting.
+            - Use strict CORS.
 
-## Reliability
-- Structured logs.
-- Graceful disconnect handling.
-- Test critical flows.
+            ## Reliability
+            - Structured logs.
+            - Graceful disconnect handling.
+            - Test critical flows.
 
-## Workflow
-- Scaffold first.
-- Refactor generated code.
-- Keep architecture clean.
-MD;
+            ## Workflow
+            - Scaffold first.
+            - Refactor generated code.
+            - Keep architecture clean.
+            MD;
 
         if ($ide === 'cursor') {
             $cursor = $root . '/.cursor/rules/sockeon-guidelines.mdc';
@@ -228,7 +226,7 @@ MD;
         $dir = dirname($file);
 
         if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
+            mkdir($dir, 0o755, true);
         }
     }
 }
