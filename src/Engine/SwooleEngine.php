@@ -87,8 +87,8 @@ class SwooleEngine implements EngineInterface
             'open_websocket_protocol' => true,
         ]);
 
-        $server->on('Open', function (\Swoole\WebSocket\Server $server, \Swoole\Http\Request $request): void {
-            $this->handleOpen($server, $request);
+        $server->on('handshake', function (\Swoole\Http\Request $request, \Swoole\Http\Response $response) use ($server): bool {
+            return $this->handleHandshake($server, $request, $response);
         });
 
         $server->on('Message', function (\Swoole\WebSocket\Server $server, \Swoole\WebSocket\Frame $frame): void {
@@ -163,12 +163,15 @@ class SwooleEngine implements EngineInterface
         $this->clientRegistry->remove($clientId);
     }
 
-    protected function validateIncomingConnection(
-        string $clientId,
-        HandshakeRequest $handshakeRequest,
+    protected function handleHandshake(
         \Swoole\WebSocket\Server $server,
-        int $fd,
+        \Swoole\Http\Request $request,
+        \Swoole\Http\Response $response,
     ): bool {
+        $fd = $request->fd;
+        $clientId = $this->clientRegistry->generateClientId();
+        $handshakeRequest = HandshakeRequest::fromSwooleRequest($request);
+
         try {
             /** @var bool|array<string, mixed> $result */
             $result = $this->server->getMiddleware()->runHandshakeStack(
@@ -180,28 +183,26 @@ class SwooleEngine implements EngineInterface
                 $this->server
             );
 
-            if ($result === false || is_array($result)) {
-                $server->close($fd);
+            if ($result === false) {
+                $this->rejectHandshake($server, $response, $fd, []);
 
                 return false;
             }
 
-            return true;
+            if (is_array($result)) {
+                $this->rejectHandshake($server, $response, $fd, $result);
+
+                return false;
+            }
         } catch (Throwable $e) {
             $this->server->getLogger()->exception($e, ['context' => 'Swoole handshake validation']);
-            $server->close($fd);
+            $this->rejectHandshake($server, $response, $fd, [
+                'status' => 500,
+                'statusText' => 'Internal Server Error',
+                'body' => 'An error occurred while processing your request.',
+            ]);
 
             return false;
-        }
-    }
-
-    protected function handleOpen(\Swoole\WebSocket\Server $server, \Swoole\Http\Request $request): void
-    {
-        $fd = $request->fd;
-        $clientId = $this->clientRegistry->generateClientId();
-
-        if (!$this->validateIncomingConnection($clientId, HandshakeRequest::fromSwooleRequest($request), $server, $fd)) {
-            return;
         }
 
         $maxConnections = min($this->config->getMaxConnection(), $this->server->getMaxConnections());
@@ -209,9 +210,13 @@ class SwooleEngine implements EngineInterface
             $this->server->getLogger()->warning('[Sockeon Connection] Connection limit reached, rejecting client', [
                 'max_connections' => $maxConnections,
             ]);
-            $server->close($fd);
+            $this->rejectHandshake($server, $response, $fd, [
+                'status' => 503,
+                'statusText' => 'Service Unavailable',
+                'body' => 'Connection limit reached',
+            ]);
 
-            return;
+            return false;
         }
 
         $clientIp = $this->getClientIpFromRequest($request);
@@ -219,10 +224,97 @@ class SwooleEngine implements EngineInterface
             $this->server->getLogger()->warning('[Sockeon Connection] Connection rate limit exceeded, rejecting client', [
                 'ip' => $clientIp,
             ]);
+            $this->rejectHandshake($server, $response, $fd, [
+                'status' => 429,
+                'statusText' => 'Too Many Requests',
+                'body' => 'Connection rate limit exceeded',
+            ]);
+
+            return false;
+        }
+
+        if (!$this->completeSwooleHandshake($handshakeRequest, $response)) {
             $server->close($fd);
 
+            return false;
+        }
+
+        $this->pendingClientIds[$fd] = $clientId;
+        $server->defer(function () use ($server, $request, $clientId, $fd, $clientIp): void {
+            $this->completeWebSocketOpen($server, $request, $clientId, $fd, $clientIp);
+        });
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $responseData
+     */
+    protected function rejectHandshake(
+        \Swoole\WebSocket\Server $server,
+        \Swoole\Http\Response $response,
+        int $fd,
+        array $responseData,
+    ): void {
+        $statusCode = is_int($responseData['status'] ?? null) ? $responseData['status'] : 403;
+        $body = is_string($responseData['body'] ?? null) ? $responseData['body'] : 'Access denied';
+        $headers = is_array($responseData['headers'] ?? null) ? $responseData['headers'] : [];
+
+        $response->status($statusCode);
+        $response->header('Content-Type', 'text/plain');
+
+        foreach ($headers as $name => $value) {
+            if (is_string($name) && (is_string($value) || is_numeric($value))) {
+                $response->header($name, (string) $value);
+            }
+        }
+
+        $response->end($body);
+        $server->close($fd);
+    }
+
+    protected function completeSwooleHandshake(HandshakeRequest $handshakeRequest, \Swoole\Http\Response $response): bool
+    {
+        $webSocketKey = $handshakeRequest->getWebSocketKey();
+        if ($webSocketKey === null) {
+            return false;
+        }
+
+        $acceptKey = base64_encode(sha1($webSocketKey . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
+
+        $response->header('Upgrade', 'websocket');
+        $response->header('Connection', 'Upgrade');
+        $response->header('Sec-WebSocket-Accept', $acceptKey);
+        $response->header('Sec-WebSocket-Version', '13');
+
+        $origin = $handshakeRequest->getOrigin();
+        if ($origin !== null) {
+            $response->header('Access-Control-Allow-Origin', $origin);
+        }
+
+        $protocol = $handshakeRequest->getHeader('Sec-WebSocket-Protocol');
+        if ($protocol !== null) {
+            $response->header('Sec-WebSocket-Protocol', $protocol);
+        }
+
+        $response->status(101);
+        $response->end();
+
+        return true;
+    }
+
+    protected function completeWebSocketOpen(
+        \Swoole\WebSocket\Server $server,
+        \Swoole\Http\Request $request,
+        string $clientId,
+        int $fd,
+        ?string $clientIp,
+    ): void {
+        if (!isset($this->pendingClientIds[$fd])) {
             return;
         }
+
+        unset($this->pendingClientIds[$fd]);
 
         $workerId = $server->worker_id ?? 0;
         $this->clientRegistry->registerConnection($clientId, $fd, 'ws', $workerId);
