@@ -484,46 +484,26 @@ trait HandlesClients
 
     public function setClientData(string $clientId, string $key, mixed $value): void
     {
-        $this->clientData[$clientId][$key] = $value;
-
         if ($this->redisClientDataStore !== null) {
             $this->redisClientDataStore->set($clientId, $key, $value);
+
+            return;
         }
+
+        $this->clientData[$clientId][$key] = $value;
     }
 
     public function getClientData(string $clientId, ?string $key = null): mixed
     {
+        if ($this->redisClientDataStore !== null) {
+            return $this->redisClientDataStore->get($clientId, $key);
+        }
+
         if ($key === null) {
-            if (isset($this->clientData[$clientId])) {
-                return $this->clientData[$clientId];
-            }
-
-            if ($this->redisClientDataStore === null) {
-                return null;
-            }
-
-            $data = $this->redisClientDataStore->get($clientId);
-            if (is_array($data)) {
-                $this->clientData[$clientId] = $data;
-            }
-
-            return $data;
+            return $this->clientData[$clientId] ?? null;
         }
 
-        if (isset($this->clientData[$clientId][$key])) {
-            return $this->clientData[$clientId][$key];
-        }
-
-        if ($this->redisClientDataStore === null) {
-            return null;
-        }
-
-        $value = $this->redisClientDataStore->get($clientId, $key);
-        if ($value !== null) {
-            $this->clientData[$clientId][$key] = $value;
-        }
-
-        return $value;
+        return $this->clientData[$clientId][$key] ?? null;
     }
 
     protected function clearClientData(string $clientId): void

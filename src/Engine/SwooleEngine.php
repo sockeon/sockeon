@@ -53,6 +53,8 @@ class SwooleEngine implements EngineInterface
 
     public function start(): void
     {
+        ini_set('memory_limit', $this->config->getMemoryLimit());
+
         if (!class_exists(\Swoole\WebSocket\Server::class)) {
             throw new RuntimeException(
                 'The Swoole extension is required for the swoole engine. Install ext-swoole or ext-openswoole.'

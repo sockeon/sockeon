@@ -14,6 +14,8 @@ class SwooleEngineConfig
 
     protected bool $coroutineDispatch = true;
 
+    protected ?string $memoryLimit = null;
+
     /**
      * @param array<string, mixed> $config
      */
@@ -40,6 +42,10 @@ class SwooleEngineConfig
 
         if (isset($config['coroutine_dispatch'])) {
             $this->coroutineDispatch = (bool) $config['coroutine_dispatch'];
+        }
+
+        if (isset($config['memory_limit']) && is_string($config['memory_limit']) && $config['memory_limit'] !== '') {
+            $this->memoryLimit = $config['memory_limit'];
         }
     }
 
@@ -74,5 +80,17 @@ class SwooleEngineConfig
     public function useCoroutineDispatch(): bool
     {
         return $this->coroutineDispatch;
+    }
+
+    public function getMemoryLimit(): string
+    {
+        if ($this->memoryLimit !== null) {
+            return $this->memoryLimit;
+        }
+
+        // ponytail: PHP's 128M default cannot hold Laravel + swoole connection buffers at scale
+        $mb = max(512, 128 + (int) ceil($this->maxConnection / 64));
+
+        return $mb . 'M';
     }
 }

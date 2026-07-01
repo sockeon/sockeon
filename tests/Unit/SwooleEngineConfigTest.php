@@ -15,6 +15,18 @@ test('swoole engine config defaults', function () {
         ->and($config->useCoroutineDispatch())->toBeTrue();
 });
 
+test('swoole engine config raises memory limit for high connection counts', function () {
+    $config = new SwooleEngineConfig(['max_connection' => 10_000]);
+
+    expect($config->getMemoryLimit())->toBe('512M');
+});
+
+test('swoole engine config accepts explicit memory limit', function () {
+    $config = new SwooleEngineConfig(['memory_limit' => '1G']);
+
+    expect($config->getMemoryLimit())->toBe('1G');
+});
+
 test('survivability config exposes swoole heartbeat settings', function () {
     $config = new SurvivabilityConfig([
         'write_buffer_limit' => 32768,
