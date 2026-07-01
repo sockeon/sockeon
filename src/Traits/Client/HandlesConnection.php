@@ -170,6 +170,13 @@ trait HandlesConnection
         }
 
         $this->connected = true;
+
+        $parts = explode("\r\n\r\n", $response, 2);
+        $leftover = $parts[1] ?? '';
+        if ($leftover !== '') {
+            $this->handleIncomingData($leftover);
+        }
+
         return true;
     }
 }

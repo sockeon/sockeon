@@ -82,7 +82,7 @@ trait HandlesSendBroadcast
 
     protected function isWebSocketClient(string $clientId): bool
     {
-        return $this->isClientConnected($clientId) && ($this->clientTypes[$clientId] ?? '') === 'ws';
+        return $this->isClientConnected($clientId) && $this->getClientType($clientId) === 'ws';
     }
 
     /**

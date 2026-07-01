@@ -89,10 +89,6 @@ class SwooleEngine implements EngineInterface
             'open_websocket_protocol' => true,
         ]);
 
-        $server->on('Handshake', function (\Swoole\Http\Request $request, \Swoole\Http\Response $response): bool {
-            return $this->handleHandshake($request, $response);
-        });
-
         $server->on('Open', function (\Swoole\WebSocket\Server $server, \Swoole\Http\Request $request): void {
             $this->handleOpen($server, $request);
         });
@@ -164,11 +160,12 @@ class SwooleEngine implements EngineInterface
         $this->clientRegistry->remove($clientId);
     }
 
-    protected function handleHandshake(\Swoole\Http\Request $request, \Swoole\Http\Response $response): bool
-    {
-        $handshakeRequest = HandshakeRequest::fromSwooleRequest($request);
-        $clientId = $this->clientRegistry->generateClientId();
-
+    protected function validateIncomingConnection(
+        string $clientId,
+        HandshakeRequest $handshakeRequest,
+        \Swoole\WebSocket\Server $server,
+        int $fd,
+    ): bool {
         try {
             /** @var bool|array<string, mixed> $result */
             $result = $this->server->getMiddleware()->runHandshakeStack(
@@ -180,30 +177,16 @@ class SwooleEngine implements EngineInterface
                 $this->server
             );
 
-            if ($result === false) {
-                $response->status(403);
-                $response->end('Access denied');
+            if ($result === false || is_array($result)) {
+                $server->close($fd);
 
                 return false;
             }
-
-            if (is_array($result)) {
-                $statusCode = is_int($result['status'] ?? null) ? $result['status'] : 403;
-                $statusText = is_string($result['statusText'] ?? null) ? $result['statusText'] : 'Forbidden';
-                $body = is_string($result['body'] ?? null) ? $result['body'] : 'Access denied';
-                $response->status($statusCode, $statusText);
-                $response->end($body);
-
-                return false;
-            }
-
-            $this->pendingClientIds[$request->fd] = $clientId;
 
             return true;
         } catch (Throwable $e) {
-            $this->server->getLogger()->exception($e, ['context' => 'Swoole handshake']);
-            $response->status(500);
-            $response->end('Handshake failed');
+            $this->server->getLogger()->exception($e, ['context' => 'Swoole handshake validation']);
+            $server->close($fd);
 
             return false;
         }
@@ -212,8 +195,11 @@ class SwooleEngine implements EngineInterface
     protected function handleOpen(\Swoole\WebSocket\Server $server, \Swoole\Http\Request $request): void
     {
         $fd = $request->fd;
-        $clientId = $this->pendingClientIds[$fd] ?? $this->clientRegistry->generateClientId();
-        unset($this->pendingClientIds[$fd]);
+        $clientId = $this->clientRegistry->generateClientId();
+
+        if (!$this->validateIncomingConnection($clientId, HandshakeRequest::fromSwooleRequest($request), $server, $fd)) {
+            return;
+        }
 
         $maxConnections = min($this->config->getMaxConnection(), $this->server->getMaxConnections());
         if ($this->clientRegistry->count() >= $maxConnections) {

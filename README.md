@@ -17,6 +17,8 @@ composer require sockeon/sockeon
 - PHP 8.1 or higher
 - ext-sockets
 - ext-openssl
+- ext-redis
+- ext-openswoole
 
 ## Documentation
 

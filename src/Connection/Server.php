@@ -11,6 +11,7 @@ use Sockeon\Sockeon\Contracts\LoggerInterface;
 use Sockeon\Sockeon\Contracts\Namespace\NamespaceManagerInterface;
 use Sockeon\Sockeon\Contracts\Publisher\PublisherInterface;
 use Sockeon\Sockeon\Engine\EngineFactory;
+use Sockeon\Sockeon\Engine\SwooleEngine;
 use Sockeon\Sockeon\Core\Middleware;
 use Sockeon\Sockeon\Core\Router;
 use Sockeon\Sockeon\Http\Handler as HttpHandler;
@@ -218,6 +219,10 @@ class Server
      */
     public function getClientIds(): array
     {
+        if ($this->engine instanceof SwooleEngine) {
+            return $this->engine->getClientRegistry()->ids();
+        }
+
         return array_keys($this->clients);
     }
 
@@ -228,6 +233,10 @@ class Server
      */
     public function getClientCount(): int
     {
+        if ($this->engine instanceof SwooleEngine) {
+            return $this->engine->getClientRegistry()->count();
+        }
+
         return count($this->clients);
     }
 
@@ -249,6 +258,10 @@ class Server
      */
     public function isClientConnected(string $clientId): bool
     {
+        if ($this->engine instanceof SwooleEngine) {
+            return $this->engine->getClientRegistry()->has($clientId);
+        }
+
         return isset($this->clients[$clientId]);
     }
 
@@ -260,6 +273,10 @@ class Server
      */
     public function getClientType(string $clientId): ?string
     {
+        if ($this->engine instanceof SwooleEngine) {
+            return $this->engine->getClientRegistry()->getType($clientId);
+        }
+
         return $this->clientTypes[$clientId] ?? null;
     }
 

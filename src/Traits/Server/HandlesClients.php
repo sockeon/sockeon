@@ -148,11 +148,18 @@ trait HandlesClients
         $this->performanceMonitor->recordRequest('connection');
     }
 
+    /**
+     * @var array<string, true>
+     */
+    protected array $finalizingClients = [];
+
     public function finalizeSwooleClientDisconnect(string $clientId): void
     {
-        if (!isset($this->clients[$clientId])) {
+        if (!isset($this->clients[$clientId]) || isset($this->finalizingClients[$clientId])) {
             return;
         }
+
+        $this->finalizingClients[$clientId] = true;
 
         try {
             if (($this->clientTypes[$clientId] ?? null) === 'ws') {
@@ -184,6 +191,8 @@ trait HandlesClients
             $this->logger->debug("[Sockeon Connection] Client disconnected: $clientId");
         } catch (Throwable $e) {
             $this->logger->exception($e, ['context' => 'Swoole client disconnection', 'clientId' => $clientId]);
+        } finally {
+            unset($this->finalizingClients[$clientId]);
         }
     }
 
@@ -450,7 +459,7 @@ trait HandlesClients
                     }
                 } elseif (is_int($client)) {
                     $this->engine->closeConnection($clientId, $client);
-                    if (isset($this->clients[$clientId])) {
+                    if (isset($this->clients[$clientId]) && !isset($this->finalizingClients[$clientId])) {
                         $this->finalizeSwooleClientDisconnect($clientId);
                     }
 
