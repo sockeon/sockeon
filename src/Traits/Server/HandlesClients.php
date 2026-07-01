@@ -132,6 +132,65 @@ trait HandlesClients
         $this->performanceMonitor->recordRequest('connection');
     }
 
+    public function registerSwooleClient(string $clientId, int $fd, string $type = 'ws', ?string $clientIp = null): void
+    {
+        $this->resourceToClientId[$fd] = $clientId;
+
+        if ($clientIp !== null) {
+            $this->clientIps[$clientId] = $clientIp;
+            $this->connectionsPerIp[$clientIp] = ($this->connectionsPerIp[$clientIp] ?? 0) + 1;
+        }
+
+        $this->clients[$clientId] = $fd;
+        $this->clientTypes[$clientId] = $type;
+        $this->namespaceManager->joinNamespace($clientId);
+        $this->performanceMonitor->recordRequest('connection');
+    }
+
+    public function finalizeSwooleClientDisconnect(string $clientId): void
+    {
+        if (!isset($this->clients[$clientId])) {
+            return;
+        }
+
+        try {
+            if (($this->clientTypes[$clientId] ?? null) === 'ws') {
+                try {
+                    $this->router->dispatchSpecialEvent($clientId, 'disconnect');
+                } catch (Throwable $e) {
+                    // Ignore disconnect event errors
+                }
+            }
+
+            $client = $this->clients[$clientId];
+            $resourceId = is_int($client) ? $client : null;
+
+            unset($this->clients[$clientId], $this->clientTypes[$clientId]);
+            unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
+
+            if (isset($this->clientData[$clientId])) {
+                unset($this->clientData[$clientId]);
+            }
+
+            if ($resourceId !== null) {
+                unset($this->resourceToClientId[$resourceId]);
+            }
+
+            $this->decrementConnectionCountForClient($clientId);
+            $this->namespaceManager->leaveNamespace($clientId);
+            $this->engine->forgetClient($clientId);
+
+            $this->logger->debug("[Sockeon Connection] Client disconnected: $clientId");
+        } catch (Throwable $e) {
+            $this->logger->exception($e, ['context' => 'Swoole client disconnection', 'clientId' => $clientId]);
+        }
+    }
+
+    public function isConnectionAllowedForIp(string $clientIp): bool
+    {
+        return $this->isConnectionAllowed($clientIp);
+    }
+
     /**
      * Client buffers for incomplete requests
      * @var array<string, string>
@@ -370,12 +429,11 @@ trait HandlesClients
     {
         try {
             if (isset($this->clients[$clientId])) {
-                // Get resource for cleanup
                 $client = $this->clients[$clientId];
-                $resourceId = is_resource($client) ? (int) $client : null;
+                $isResource = is_resource($client);
+                $resourceId = $isResource ? (int) $client : (is_int($client) ? $client : null);
 
-                // Only dispatch disconnect event if client was a WebSocket and still connected
-                if (($this->clientTypes[$clientId] ?? null) === 'ws' && is_resource($client)) {
+                if (($this->clientTypes[$clientId] ?? null) === 'ws' && $isResource) {
                     try {
                         $this->router->dispatchSpecialEvent($clientId, 'disconnect');
                     } catch (Throwable $e) {
@@ -383,35 +441,36 @@ trait HandlesClients
                     }
                 }
 
-                // Return connection to pool if it's still valid
-                if (is_resource($client) && !@feof($client)) {
-                    $this->connectionPool->releaseConnection($clientId);
-                } else {
-                    // Safe resource cleanup for invalid connections
-                    if (is_resource($client)) {
+                if ($isResource) {
+                    if (!@feof($client)) {
+                        $this->connectionPool->releaseConnection($clientId);
+                    } else {
                         @fclose($client);
                     }
+                } elseif (is_int($client)) {
+                    $this->engine->closeConnection($clientId, $client);
+                    if (isset($this->clients[$clientId])) {
+                        $this->finalizeSwooleClientDisconnect($clientId);
+                    }
+
+                    return;
                 }
 
-                // Clean up all client data and buffers to free memory immediately
                 unset($this->clients[$clientId], $this->clientTypes[$clientId]);
 
-                // Explicitly clear client data array entry
                 if (isset($this->clientData[$clientId])) {
                     unset($this->clientData[$clientId]);
                 }
 
-                // Clear buffers to free memory
                 unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
 
-                // Clean up resource-to-clientId mapping
                 if ($resourceId !== null) {
                     unset($this->resourceToClientId[$resourceId]);
                 }
 
                 $this->decrementConnectionCountForClient($clientId);
-
                 $this->namespaceManager->leaveNamespace($clientId);
+                $this->engine->forgetClient($clientId);
 
                 $this->logger->debug("[Sockeon Connection] Client disconnected: $clientId");
             }

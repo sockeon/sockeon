@@ -7,7 +7,7 @@ use Sockeon\Sockeon\Config\ServerConfig;
 use Sockeon\Sockeon\Config\SurvivabilityConfig;
 use Sockeon\Sockeon\Contracts\Engine\EngineInterface;
 use Sockeon\Sockeon\Contracts\LoggerInterface;
-use Sockeon\Sockeon\Engine\StreamSelectEngine;
+use Sockeon\Sockeon\Engine\EngineFactory;
 use Sockeon\Sockeon\Core\Middleware;
 use Sockeon\Sockeon\Core\NamespaceManager;
 use Sockeon\Sockeon\Core\Router;
@@ -45,7 +45,7 @@ class Server
 
     protected EngineInterface $engine;
 
-    /** @var array<string, resource> */
+    /** @var array<string, resource|int> */
     protected array $clients = [];
 
     /** @var array<string, string> */
@@ -54,7 +54,9 @@ class Server
     /** @var array<string, array<string, mixed>> */
     protected array $clientData = [];
 
-    /** @var array<int, string> Maps resource ID to unique client ID */
+    /**
+     * @var array<int, string> Maps transport handle (resource id or Swoole fd) to client ID
+     */
     protected array $resourceToClientId = [];
 
     /** @var int Counter for generating sequential part of client ID */
@@ -93,7 +95,7 @@ class Server
     {
         $this->applyServerConfig($config);
         $this->initializeCoreComponents($config);
-        $this->engine = $engine ?? new StreamSelectEngine();
+        $this->engine = $engine ?? EngineFactory::create($config);
         $this->engine->setServer($this);
     }
 
@@ -135,7 +137,7 @@ class Server
     /**
      * Get all connected clients
      *
-     * @return array<string, resource> Array of client IDs and their resources
+     * @return array<string, resource|int> Array of client IDs and their transport handles
      */
     public function getClients(): array
     {

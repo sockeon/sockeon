@@ -54,6 +54,13 @@ class ServerConfig
     protected SurvivabilityConfig $survivabilityConfig;
 
     /**
+     * Runtime engine: stream_select (default) or swoole.
+     */
+    protected string $engine = 'stream_select';
+
+    protected SwooleEngineConfig $swooleEngineConfig;
+
+    /**
      * Trust proxy settings for reverse proxy/load balancer support.
      * Can be:
      * - true: Trust all proxies
@@ -170,6 +177,20 @@ class ServerConfig
             $this->survivabilityConfig = new SurvivabilityConfig($survivabilityConfig);
         } else {
             $this->survivabilityConfig = new SurvivabilityConfig();
+        }
+
+        if (isset($config['engine']) && is_string($config['engine'])) {
+            $this->engine = $config['engine'];
+        }
+
+        if (isset($config['swoole']) && $config['swoole'] instanceof SwooleEngineConfig) {
+            $this->swooleEngineConfig = $config['swoole'];
+        } elseif (isset($config['swoole']) && is_array($config['swoole'])) {
+            /** @var array<string, mixed> $swooleConfig */
+            $swooleConfig = $config['swoole'];
+            $this->swooleEngineConfig = new SwooleEngineConfig($swooleConfig);
+        } else {
+            $this->swooleEngineConfig = new SwooleEngineConfig();
         }
 
         // Initialize trust proxy settings
@@ -476,5 +497,25 @@ class ServerConfig
     public function setSurvivabilityConfig(SurvivabilityConfig $survivabilityConfig): void
     {
         $this->survivabilityConfig = $survivabilityConfig;
+    }
+
+    public function getEngine(): string
+    {
+        return $this->engine;
+    }
+
+    public function setEngine(string $engine): void
+    {
+        $this->engine = $engine;
+    }
+
+    public function getSwooleEngineConfig(): SwooleEngineConfig
+    {
+        return $this->swooleEngineConfig;
+    }
+
+    public function setSwooleEngineConfig(SwooleEngineConfig $swooleEngineConfig): void
+    {
+        $this->swooleEngineConfig = $swooleEngineConfig;
     }
 }

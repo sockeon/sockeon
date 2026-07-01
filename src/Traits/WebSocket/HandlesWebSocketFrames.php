@@ -315,6 +315,16 @@ trait HandlesWebSocketFrames
      */
     public function prepareMessage(string $event, array $data): string
     {
+        return $this->encodeWebSocketFrame($this->encodeEventPayload($event, $data));
+    }
+
+    /**
+     * Encode a Sockeon event envelope as JSON (no WebSocket framing).
+     *
+     * @param array<string, mixed> $data
+     */
+    public function encodeEventPayload(string $event, array $data): string
+    {
         $message = json_encode([
             'event' => $event,
             'data' => $data,
@@ -330,7 +340,7 @@ trait HandlesWebSocketFrames
             }
         }
 
-        return $this->encodeWebSocketFrame($message);
+        return $message;
     }
 
     /**

@@ -17,6 +17,14 @@ test('survivability config accepts custom max_connections', function () {
     expect($config->getMaxConnections())->toBe(500);
 });
 
+test('survivability config defaults heartbeat and write buffer settings', function () {
+    $config = new SurvivabilityConfig();
+
+    expect($config->getWriteBufferLimit())->toBe(65536)
+        ->and($config->getHeartbeatIdleTime())->toBe(600)
+        ->and($config->getHeartbeatCheckInterval())->toBe(60);
+});
+
 test('server exposes survivability max_connections', function () {
     $serverConfig = new ServerConfig([
         'survivability' => ['max_connections' => 250],

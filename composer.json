@@ -47,6 +47,9 @@
         "phpstan/phpstan": "^1.10",
         "friendsofphp/php-cs-fixer": "^3.0"
     },
+    "suggest": {
+        "ext-openswoole": "Required for engine=swoole high-concurrency mode"
+    },
     "config": {
         "allow-plugins": {
             "pestphp/pest-plugin": true

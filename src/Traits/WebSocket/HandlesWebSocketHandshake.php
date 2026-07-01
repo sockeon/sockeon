@@ -118,6 +118,44 @@ trait HandlesWebSocketHandshake
     }
 
     /**
+     * Validate handshake rules without writing an HTTP upgrade response (Swoole path).
+     */
+    public function validateHandshakeRequest(string $clientId, HandshakeRequest $request): bool
+    {
+        $origin = $request->getOrigin();
+        if ($origin !== null && !$this->isOriginAllowed($origin)) {
+            return false;
+        }
+
+        $authKey = Config::getAuthKey();
+        if ($authKey !== null) {
+            $keyParam = $request->getQueryParam('key');
+
+            if ($keyParam === null || $keyParam !== $authKey) {
+                $this->server->getLogger()->debug("[WebSocket Authentication] Authentication failed for client: $clientId");
+
+                return false;
+            }
+
+            $this->server->getLogger()->debug("[WebSocket Authentication] Authentication successful for client: $clientId");
+        }
+
+        if (!$request->isValidWebSocketRequest()) {
+            return false;
+        }
+
+        return $request->getWebSocketKey() !== null;
+    }
+
+    /**
+     * Mark a client handshake as complete without running the HTTP upgrade (Swoole path).
+     */
+    public function markHandshakeComplete(string $clientId): void
+    {
+        $this->handshakes[$clientId] = true;
+    }
+
+    /**
      * Send a custom response to the client
      *
      * @param resource $client The client socket resource
