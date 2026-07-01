@@ -35,6 +35,7 @@ trait HandlesClients
         $this->performanceMonitor = new PerformanceMonitor();
         $this->registerTaskProcessors();
         $this->startTime = microtime(true);
+        $this->publisher->start();
     }
 
     public function runEngineLoopHooks(): void

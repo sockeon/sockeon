@@ -43,12 +43,13 @@
         "framework-agnostic"
     ],
     "require-dev": {
-        "pestphp/pest": "^2.0",
+        "pestphp/pest": "^2.0 || ^3.0",
         "phpstan/phpstan": "^1.10",
         "friendsofphp/php-cs-fixer": "^3.0"
     },
     "suggest": {
-        "ext-openswoole": "Required for engine=swoole high-concurrency mode"
+        "ext-openswoole": "Required for engine=swoole high-concurrency mode",
+        "ext-redis": "Required for scale.publisher=redis or scale.registry=redis multi-node mode"
     },
     "config": {
         "allow-plugins": {

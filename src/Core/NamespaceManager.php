@@ -12,7 +12,9 @@
 
 namespace Sockeon\Sockeon\Core;
 
-class NamespaceManager
+use Sockeon\Sockeon\Contracts\Namespace\NamespaceManagerInterface;
+
+class NamespaceManager implements NamespaceManagerInterface
 {
     /**
      * The namespaces and clients within them

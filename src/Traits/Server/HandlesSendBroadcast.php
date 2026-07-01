@@ -64,35 +64,20 @@ trait HandlesSendBroadcast
      */
     public function broadcast(string $event, array $data, ?string $namespace = null, ?string $room = null): void
     {
-        $payload = $this->buildEventPayload($event, $data);
+        $this->publisher->broadcast($event, $data, $namespace, $room);
+    }
 
-        if ($room !== null && $namespace !== null) {
-            $clients = $this->namespaceManager->getClientsInRoom($room, $namespace);
-        } elseif ($namespace !== null) {
-            $clients = $this->namespaceManager->getClientsInNamespace($namespace);
-        } else {
-            $clients = array_keys($this->clients);
-        }
+    public function isWebSocketClientForBroadcast(string $clientId): bool
+    {
+        return $this->isWebSocketClient($clientId);
+    }
 
-        $disconnectedClients = [];
-
-        foreach ($clients as $clientId) {
-            if (!$this->isWebSocketClient($clientId)) {
-                continue;
-            }
-
-            try {
-                if (!$this->engine->send($clientId, $payload)) {
-                    $disconnectedClients[] = $clientId;
-                }
-            } catch (Throwable $e) {
-                $disconnectedClients[] = $clientId;
-            }
-        }
-
-        foreach ($disconnectedClients as $clientId) {
-            $this->disconnectClient($clientId);
-        }
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function buildEventPayloadForBroadcast(string $event, array $data): string
+    {
+        return $this->buildEventPayload($event, $data);
     }
 
     protected function isWebSocketClient(string $clientId): bool

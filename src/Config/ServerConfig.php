@@ -60,6 +60,8 @@ class ServerConfig
 
     protected SwooleEngineConfig $swooleEngineConfig;
 
+    protected ScaleConfig $scaleConfig;
+
     /**
      * Trust proxy settings for reverse proxy/load balancer support.
      * Can be:
@@ -191,6 +193,16 @@ class ServerConfig
             $this->swooleEngineConfig = new SwooleEngineConfig($swooleConfig);
         } else {
             $this->swooleEngineConfig = new SwooleEngineConfig();
+        }
+
+        if (isset($config['scale']) && $config['scale'] instanceof ScaleConfig) {
+            $this->scaleConfig = $config['scale'];
+        } elseif (isset($config['scale']) && is_array($config['scale'])) {
+            /** @var array<string, mixed> $scaleConfig */
+            $scaleConfig = $config['scale'];
+            $this->scaleConfig = new ScaleConfig($scaleConfig);
+        } else {
+            $this->scaleConfig = new ScaleConfig();
         }
 
         // Initialize trust proxy settings
@@ -517,5 +529,15 @@ class ServerConfig
     public function setSwooleEngineConfig(SwooleEngineConfig $swooleEngineConfig): void
     {
         $this->swooleEngineConfig = $swooleEngineConfig;
+    }
+
+    public function getScaleConfig(): ScaleConfig
+    {
+        return $this->scaleConfig;
+    }
+
+    public function setScaleConfig(ScaleConfig $scaleConfig): void
+    {
+        $this->scaleConfig = $scaleConfig;
     }
 }

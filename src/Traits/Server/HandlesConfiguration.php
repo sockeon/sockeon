@@ -7,7 +7,8 @@ use Sockeon\Sockeon\Config\ServerConfig;
 use Sockeon\Sockeon\Controllers\SystemRoomController;
 use Sockeon\Sockeon\Core\Config;
 use Sockeon\Sockeon\Core\Middleware;
-use Sockeon\Sockeon\Core\NamespaceManager;
+use Sockeon\Sockeon\Contracts\Namespace\NamespaceManagerInterface;
+use Sockeon\Sockeon\Scale\ScaleFactory;
 use Sockeon\Sockeon\Core\Router;
 use Sockeon\Sockeon\Http\Handler as HttpHandler;
 use Sockeon\Sockeon\WebSocket\Handler as WebSocketHandler;
@@ -45,6 +46,8 @@ trait HandlesConfiguration
 
         $this->survivabilityConfig = $config->getSurvivabilityConfig();
 
+        $this->scaleConfig = $config->getScaleConfig();
+
         $this->maxMessageSize = $config->getMaxMessageSize();
 
         $this->logger = $config->getLogger() ?? new Logger(
@@ -61,7 +64,7 @@ trait HandlesConfiguration
         $this->router = new Router();
         $this->wsHandler = new WebSocketHandler($this, $this->resolveAllowedOrigins($config->getCorsConfig()));
         $this->httpHandler = new HttpHandler($this, $config->getCorsConfig());
-        $this->namespaceManager = new NamespaceManager();
+        $this->namespaceManager = ScaleFactory::createNamespaceManager($config->getScaleConfig());
         $this->middleware = new Middleware();
 
         if ($this->rateLimitConfig && $this->rateLimitConfig->isEnabled()) {

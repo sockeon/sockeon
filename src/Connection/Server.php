@@ -3,13 +3,15 @@
 namespace Sockeon\Sockeon\Connection;
 
 use Sockeon\Sockeon\Config\RateLimitConfig;
+use Sockeon\Sockeon\Config\ScaleConfig;
 use Sockeon\Sockeon\Config\ServerConfig;
 use Sockeon\Sockeon\Config\SurvivabilityConfig;
 use Sockeon\Sockeon\Contracts\Engine\EngineInterface;
 use Sockeon\Sockeon\Contracts\LoggerInterface;
+use Sockeon\Sockeon\Contracts\Namespace\NamespaceManagerInterface;
+use Sockeon\Sockeon\Contracts\Publisher\PublisherInterface;
 use Sockeon\Sockeon\Engine\EngineFactory;
 use Sockeon\Sockeon\Core\Middleware;
-use Sockeon\Sockeon\Core\NamespaceManager;
 use Sockeon\Sockeon\Core\Router;
 use Sockeon\Sockeon\Http\Handler as HttpHandler;
 use Sockeon\Sockeon\WebSocket\Handler as WebSocketHandler;
@@ -24,6 +26,7 @@ use Sockeon\Sockeon\Traits\Server\HandlesQueue;
 use Sockeon\Sockeon\Traits\Server\HandlesRooms;
 use Sockeon\Sockeon\Traits\Server\HandlesRouting;
 use Sockeon\Sockeon\Traits\Server\HandlesSendBroadcast;
+use Sockeon\Sockeon\Scale\ScaleFactory;
 
 class Server
 {
@@ -68,7 +71,11 @@ class Server
 
     protected HttpHandler $httpHandler;
 
-    protected NamespaceManager $namespaceManager;
+    protected NamespaceManagerInterface $namespaceManager;
+
+    protected PublisherInterface $publisher;
+
+    protected ScaleConfig $scaleConfig;
 
     protected Middleware $middleware;
 
@@ -95,8 +102,19 @@ class Server
     {
         $this->applyServerConfig($config);
         $this->initializeCoreComponents($config);
+        $this->publisher = ScaleFactory::createPublisher($this, $config);
         $this->engine = $engine ?? EngineFactory::create($config);
         $this->engine->setServer($this);
+    }
+
+    public function getPublisher(): PublisherInterface
+    {
+        return $this->publisher;
+    }
+
+    public function getScaleConfig(): ScaleConfig
+    {
+        return $this->scaleConfig;
     }
 
     public function run(): void
