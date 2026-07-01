@@ -16,6 +16,10 @@ class SwooleEngineConfig
 
     protected ?string $memoryLimit = null;
 
+    protected int $socketBufferSize = 131072;
+
+    protected int $bufferOutputSize = 131072;
+
     /**
      * @param array<string, mixed> $config
      */
@@ -46,6 +50,14 @@ class SwooleEngineConfig
 
         if (isset($config['memory_limit']) && is_string($config['memory_limit']) && $config['memory_limit'] !== '') {
             $this->memoryLimit = $config['memory_limit'];
+        }
+
+        if (isset($config['socket_buffer_size']) && is_numeric($config['socket_buffer_size'])) {
+            $this->socketBufferSize = max(8192, (int) $config['socket_buffer_size']);
+        }
+
+        if (isset($config['buffer_output_size']) && is_numeric($config['buffer_output_size'])) {
+            $this->bufferOutputSize = max(8192, (int) $config['buffer_output_size']);
         }
     }
 
@@ -88,9 +100,23 @@ class SwooleEngineConfig
             return $this->memoryLimit;
         }
 
-        // ponytail: PHP's 128M default cannot hold Laravel + swoole connection buffers at scale
-        $mb = max(512, 128 + (int) ceil($this->maxConnection / 64));
+        // ponytail: Laravel boot + swoole reactor at 10k needs ≥1G; 512M OOMs at start()
+        if ($this->maxConnection >= 10_000) {
+            return '1G';
+        }
+
+        $mb = max(256, 128 + (int) ceil($this->maxConnection / 64));
 
         return $mb . 'M';
+    }
+
+    public function getSocketBufferSize(): int
+    {
+        return $this->socketBufferSize;
+    }
+
+    public function getBufferOutputSize(): int
+    {
+        return $this->bufferOutputSize;
     }
 }

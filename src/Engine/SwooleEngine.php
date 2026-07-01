@@ -80,6 +80,8 @@ class SwooleEngine implements EngineInterface
             'heartbeat_check_interval' => $survivability->getHeartbeatCheckInterval(),
             'enable_coroutine' => true,
             'package_max_length' => $this->server->getMaxMessageSize(),
+            'socket_buffer_size' => $this->config->getSocketBufferSize(),
+            'buffer_output_size' => $this->config->getBufferOutputSize(),
             'open_http_protocol' => true,
             'open_websocket_protocol' => true,
         ]);
