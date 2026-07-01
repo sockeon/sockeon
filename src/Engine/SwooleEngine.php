@@ -24,11 +24,6 @@ class SwooleEngine implements EngineInterface
 
     private ?\Swoole\WebSocket\Server $swooleServer = null;
 
-    /**
-     * @var array<int, string>
-     */
-    private array $pendingClientIds = [];
-
     public function __construct(?SwooleEngineConfig $config = null)
     {
         $this->config = $config ?? new SwooleEngineConfig();
@@ -155,11 +150,6 @@ class SwooleEngine implements EngineInterface
 
     public function forgetClient(string $clientId): void
     {
-        $fd = $this->clientRegistry->getFd($clientId);
-        if ($fd !== null) {
-            unset($this->pendingClientIds[$fd]);
-        }
-
         $this->clientRegistry->remove($clientId);
     }
 
@@ -239,10 +229,7 @@ class SwooleEngine implements EngineInterface
             return false;
         }
 
-        $this->pendingClientIds[$fd] = $clientId;
-        $server->defer(function () use ($server, $request, $clientId, $fd, $clientIp): void {
-            $this->completeWebSocketOpen($server, $request, $clientId, $fd, $clientIp);
-        });
+        $this->completeWebSocketOpen($server, $request, $clientId, $fd, $clientIp);
 
         return true;
     }
@@ -310,12 +297,6 @@ class SwooleEngine implements EngineInterface
         int $fd,
         ?string $clientIp,
     ): void {
-        if (!isset($this->pendingClientIds[$fd])) {
-            return;
-        }
-
-        unset($this->pendingClientIds[$fd]);
-
         $workerId = $server->worker_id ?? 0;
         $this->clientRegistry->registerConnection($clientId, $fd, 'ws', $workerId);
         $this->server->registerSwooleClient($clientId, $fd, 'ws', $clientIp);
@@ -386,7 +367,6 @@ class SwooleEngine implements EngineInterface
 
         $this->server->finalizeSwooleClientDisconnect($clientId);
         $this->clientRegistry->remove($clientId);
-        unset($this->pendingClientIds[$fd]);
     }
 
     protected function handleHttpRequest(\Swoole\Http\Request $request, \Swoole\Http\Response $response): void
