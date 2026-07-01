@@ -52,8 +52,8 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
 
     public function remove(string $clientId): void
     {
-        $row = $this->tables->clients->get($clientId);
-        if ($row !== false) {
+        $row = $this->getClientRow($clientId);
+        if ($row !== null) {
             $this->tables->fdMap->del((string) $row['fd']);
         }
 
@@ -75,12 +75,9 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
 
     public function getFd(string $clientId): ?int
     {
-        $row = $this->tables->clients->get($clientId);
-        if ($row === false) {
-            return null;
-        }
+        $row = $this->getClientRow($clientId);
 
-        return (int) $row['fd'];
+        return $row !== null ? $row['fd'] : null;
     }
 
     /**
@@ -91,6 +88,10 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
         $clients = [];
 
         foreach ($this->tables->clients as $clientId => $row) {
+            if (!is_string($clientId) || !is_array($row) || !isset($row['fd'])) {
+                continue;
+            }
+
             $clients[$clientId] = (int) $row['fd'];
         }
 
@@ -112,27 +113,25 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
 
     public function getType(string $clientId): ?string
     {
-        $row = $this->tables->clients->get($clientId);
-        if ($row === false) {
+        $row = $this->getClientRow($clientId);
+        if ($row === null) {
             return null;
         }
 
-        $type = (string) $row['type'];
-
-        return $type !== '' ? $type : null;
+        return $row['type'] !== '' ? $row['type'] : null;
     }
 
     public function setType(string $clientId, string $type): void
     {
-        $row = $this->tables->clients->get($clientId);
-        if ($row === false) {
+        $row = $this->getClientRow($clientId);
+        if ($row === null) {
             return;
         }
 
         $this->tables->clients->set($clientId, [
-            'fd' => (int) $row['fd'],
+            'fd' => $row['fd'],
             'type' => $type,
-            'worker_id' => (int) $row['worker_id'],
+            'worker_id' => $row['worker_id'],
         ]);
     }
 
@@ -150,13 +149,41 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
 
     public function getClientIdByResource(int $resourceId): ?string
     {
-        $row = $this->tables->fdMap->get((string) $resourceId);
-        if ($row === false) {
+        $row = $this->getFdMapRow($resourceId);
+        if ($row === null) {
             return null;
         }
 
-        $clientId = (string) $row['client_id'];
+        return $row['client_id'] !== '' ? $row['client_id'] : null;
+    }
 
-        return $clientId !== '' ? $clientId : null;
+    /**
+     * @return array{fd: int, type: string, worker_id: int}|null
+     */
+    private function getClientRow(string $clientId): ?array
+    {
+        $row = $this->tables->clients->get($clientId);
+        if (!is_array($row) || !isset($row['fd'], $row['type'], $row['worker_id'])) {
+            return null;
+        }
+
+        return [
+            'fd' => (int) $row['fd'],
+            'type' => (string) $row['type'],
+            'worker_id' => (int) $row['worker_id'],
+        ];
+    }
+
+    /**
+     * @return array{client_id: string}|null
+     */
+    private function getFdMapRow(int $resourceId): ?array
+    {
+        $row = $this->tables->fdMap->get((string) $resourceId);
+        if (!is_array($row) || !isset($row['client_id']) || !is_string($row['client_id'])) {
+            return null;
+        }
+
+        return ['client_id' => $row['client_id']];
     }
 }

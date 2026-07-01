@@ -55,7 +55,7 @@ class RedisNamespaceManager implements NamespaceManagerInterface
 
     public function leaveAllRooms(string $clientId): void
     {
-        $entries = $this->redis->sMembers($this->clientRoomsKey($clientId)) ?: [];
+        $entries = $this->smembers($this->clientRoomsKey($clientId));
         foreach ($entries as $entry) {
             if (!is_string($entry)) {
                 continue;
@@ -70,19 +70,17 @@ class RedisNamespaceManager implements NamespaceManagerInterface
 
     public function getClientsInNamespace(string $namespace = '/'): array
     {
-        return $this->filterLocalMembers($this->redis->sMembers($this->namespaceKey($namespace)) ?: []);
+        return $this->filterLocalMembers($this->smembers($this->namespaceKey($namespace)));
     }
 
     public function getClientsInRoom(string $room, string $namespace = '/'): array
     {
-        return $this->filterLocalMembers($this->redis->sMembers($this->roomKey($namespace, $room)) ?: []);
+        return $this->filterLocalMembers($this->smembers($this->roomKey($namespace, $room)));
     }
 
     public function getRooms(string $namespace = '/'): array
     {
-        $rooms = $this->redis->sMembers($this->namespaceRoomsKey($namespace)) ?: [];
-
-        return array_values(array_filter($rooms, 'is_string'));
+        return array_values(array_filter($this->smembers($this->namespaceRoomsKey($namespace)), 'is_string'));
     }
 
     public function getClientNamespace(string $clientId): string
@@ -94,7 +92,7 @@ class RedisNamespaceManager implements NamespaceManagerInterface
 
     public function getClientRooms(string $clientId): array
     {
-        $entries = $this->redis->sMembers($this->clientRoomsKey($clientId)) ?: [];
+        $entries = $this->smembers($this->clientRoomsKey($clientId));
         $rooms = [];
 
         foreach ($entries as $entry) {
@@ -112,6 +110,16 @@ class RedisNamespaceManager implements NamespaceManagerInterface
     public function cleanup(string $clientId): void
     {
         $this->leaveNamespace($clientId);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function smembers(string $key): array
+    {
+        $members = $this->redis->sMembers($key);
+
+        return is_array($members) ? array_values(array_filter($members, 'is_string')) : [];
     }
 
     private function refreshNodePresence(): void

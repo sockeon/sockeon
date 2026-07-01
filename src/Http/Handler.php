@@ -109,9 +109,8 @@ class Handler
      * Handle an HTTP request delivered by the Swoole engine.
      *
      * @param object $swooleRequest Swoole\Http\Request
-     * @param object $swooleResponse Swoole\Http\Response
      */
-    public function handleSwoole(string $clientId, object $swooleRequest, object $swooleResponse): void
+    public function handleSwoole(string $clientId, object $swooleRequest, \Swoole\Http\Response $swooleResponse): void
     {
         try {
             $requestData = $this->buildRequestDataFromSwoole($swooleRequest);
@@ -178,10 +177,7 @@ class Handler
         ];
     }
 
-    /**
-     * @param object $swooleResponse Swoole\Http\Response
-     */
-    protected function sendSwooleHttpResponse(object $swooleResponse, string $rawResponse): void
+    protected function sendSwooleHttpResponse(\Swoole\Http\Response $swooleResponse, string $rawResponse): void
     {
         $parts = explode("\r\n\r\n", $rawResponse, 2);
         $headerSection = $parts[0] ?? '';

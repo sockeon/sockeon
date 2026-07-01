@@ -7,15 +7,9 @@ use Sockeon\Sockeon\Config\SwooleEngineConfig;
 
 class SwooleEngineTables
 {
-    /**
-     * @var object|null Swoole\Table
-     */
-    public ?object $clients = null;
+    public \Swoole\Table $clients;
 
-    /**
-     * @var object|null Swoole\Table
-     */
-    public ?object $fdMap = null;
+    public \Swoole\Table $fdMap;
 
     public static function create(SwooleEngineConfig $config): self
     {
@@ -34,9 +28,9 @@ class SwooleEngineTables
     }
 
     /**
-     * @return object Swoole\Table
+     * @return \Swoole\Table
      */
-    private static function createClientsTable(int $size): object
+    private static function createClientsTable(int $size): \Swoole\Table
     {
         /** @var \Swoole\Table $table */
         $table = new \Swoole\Table($size);
@@ -49,9 +43,9 @@ class SwooleEngineTables
     }
 
     /**
-     * @return object Swoole\Table
+     * @return \Swoole\Table
      */
-    private static function createFdMapTable(int $size): object
+    private static function createFdMapTable(int $size): \Swoole\Table
     {
         /** @var \Swoole\Table $table */
         $table = new \Swoole\Table($size);

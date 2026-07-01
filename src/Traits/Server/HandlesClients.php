@@ -459,7 +459,7 @@ trait HandlesClients
                     }
                 } elseif (is_int($client)) {
                     $this->engine->closeConnection($clientId, $client);
-                    if (isset($this->clients[$clientId]) && !isset($this->finalizingClients[$clientId])) {
+                    if (!isset($this->finalizingClients[$clientId])) {
                         $this->finalizeSwooleClientDisconnect($clientId);
                     }
 

@@ -21,10 +21,7 @@ class SwooleEngine implements EngineInterface
 
     private SwooleTableClientRegistry $clientRegistry;
 
-    /**
-     * @var object|null Swoole\WebSocket\Server
-     */
-    private ?object $swooleServer = null;
+    private ?\Swoole\WebSocket\Server $swooleServer = null;
 
     /**
      * @var array<int, string>
