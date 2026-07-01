@@ -101,6 +101,7 @@ class SwooleEngine implements EngineInterface
         });
 
         $server->on('WorkerStart', function (\Swoole\Server $server, int $workerId): void {
+            $this->sweepStaleRegistryEntries($server);
             $this->startWorkerTimers($workerId);
         });
 
@@ -198,7 +199,7 @@ class SwooleEngine implements EngineInterface
         }
 
         $maxConnections = min($this->config->getMaxConnection(), $this->server->getMaxConnections());
-        if ($this->clientRegistry->count() >= $maxConnections) {
+        if (!$this->clientRegistry->hasTableCapacity() || $this->clientRegistry->count() >= $maxConnections) {
             $this->server->getLogger()->warning('[Sockeon Connection] Connection limit reached, rejecting client', [
                 'max_connections' => $maxConnections,
             ]);
@@ -300,7 +301,17 @@ class SwooleEngine implements EngineInterface
         ?string $clientIp,
     ): void {
         $workerId = $server->worker_id ?? 0;
-        $this->clientRegistry->registerConnection($clientId, $fd, 'ws', $workerId);
+
+        if (!$this->clientRegistry->registerConnection($clientId, $fd, 'ws', $workerId)) {
+            $this->server->getLogger()->warning('[Sockeon Connection] Client registry full, rejecting connection', [
+                'fd' => $fd,
+                'registry_count' => $this->clientRegistry->count(),
+            ]);
+            $server->close($fd);
+
+            return;
+        }
+
         $this->server->registerSwooleClient($clientId, $fd, 'ws', $clientIp);
         $this->server->getWsHandler()->markHandshakeComplete($clientId);
 
@@ -383,6 +394,20 @@ class SwooleEngine implements EngineInterface
             $this->server->getLogger()->exception($e, ['clientId' => $clientId, 'context' => 'Swoole HTTP']);
             $response->status(500);
             $response->end('An error occurred while processing your request.');
+        }
+    }
+
+    protected function sweepStaleRegistryEntries(\Swoole\Server $server): void
+    {
+        $removed = $this->clientRegistry->removeStaleConnections(
+            fn (int $fd): bool => $server->exist($fd) && $server->isEstablished($fd),
+        );
+
+        if ($removed > 0) {
+            $this->server->getLogger()->warning('[Sockeon Connection] Removed stale registry entries after worker start', [
+                'removed' => $removed,
+                'registry_count' => $this->clientRegistry->count(),
+            ]);
         }
     }
 

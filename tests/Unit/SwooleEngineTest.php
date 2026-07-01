@@ -72,3 +72,18 @@ test('swoole table client registry supports add alias for fd resources', functio
     expect($registry->getResource($clientId))->toBe(99)
         ->and($registry->all())->toBe([$clientId => 99]);
 });
+
+test('register connection rolls back clients row when registry is full', function () {
+    if (!class_exists(\Swoole\Table::class)) {
+        test()->markTestSkipped('Swoole extension not available');
+    }
+
+    $tables = SwooleEngineTables::create(new SwooleEngineConfig(['client_table_size' => 2]));
+    $registry = new SwooleTableClientRegistry($tables);
+
+    expect($registry->registerConnection($registry->generateClientId(), 1, 'ws', 0))->toBeTrue();
+    expect($registry->registerConnection($registry->generateClientId(), 2, 'ws', 0))->toBeTrue();
+    expect($registry->registerConnection($registry->generateClientId(), 3, 'ws', 0))->toBeFalse()
+        ->and($registry->count())->toBe(2)
+        ->and($tables->fdMap->count())->toBe(2);
+});

@@ -11,6 +11,8 @@ class SwooleEngineTables
 
     public \Swoole\Table $fdMap;
 
+    public int $capacity;
+
     public static function create(SwooleEngineConfig $config): self
     {
         if (!class_exists(\Swoole\Table::class)) {
@@ -21,6 +23,7 @@ class SwooleEngineTables
 
         $tables = new self();
         $size = $config->getClientTableSize();
+        $tables->capacity = $size;
         $tables->clients = self::createClientsTable($size);
         $tables->fdMap = self::createFdMapTable($size);
 

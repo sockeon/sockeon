@@ -21,6 +21,12 @@ test('swoole engine config raises memory limit for high connection counts', func
     expect($config->getMemoryLimit())->toBe('512M');
 });
 
+test('swoole engine config sizes client table with handshake headroom', function () {
+    $config = new SwooleEngineConfig(['max_connection' => 10_000]);
+
+    expect($config->getClientTableSize())->toBe(12_048);
+});
+
 test('swoole engine config accepts explicit memory limit', function () {
     $config = new SwooleEngineConfig(['memory_limit' => '1G']);
 

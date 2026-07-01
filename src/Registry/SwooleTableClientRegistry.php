@@ -28,17 +28,52 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
         );
     }
 
-    public function registerConnection(string $clientId, int $fd, string $type, int $workerId): void
+    public function registerConnection(string $clientId, int $fd, string $type, int $workerId): bool
     {
-        $this->tables->clients->set($clientId, [
+        if (!$this->hasTableCapacity()) {
+            return false;
+        }
+
+        if (!$this->tables->clients->set($clientId, [
             'fd' => $fd,
             'type' => $type,
             'worker_id' => $workerId,
-        ]);
+        ])) {
+            return false;
+        }
 
-        $this->tables->fdMap->set((string) $fd, [
+        if (!$this->tables->fdMap->set((string) $fd, [
             'client_id' => $clientId,
-        ]);
+        ])) {
+            $this->tables->clients->del($clientId);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public function hasTableCapacity(): bool
+    {
+        return $this->tables->clients->count() < $this->tables->capacity
+            && $this->tables->fdMap->count() < $this->tables->capacity;
+    }
+
+    /**
+     * @param callable(int): bool $isAlive
+     */
+    public function removeStaleConnections(callable $isAlive): int
+    {
+        $removed = 0;
+
+        foreach ($this->all() as $clientId => $fd) {
+            if (!$isAlive($fd)) {
+                $this->remove($clientId);
+                $removed++;
+            }
+        }
+
+        return $removed;
     }
 
     /**
