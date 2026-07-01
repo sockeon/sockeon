@@ -46,11 +46,11 @@ class LocalPublisher implements PublisherInterface
     private function resolveTargetClients(?string $namespace, ?string $room): array
     {
         if ($room !== null && $namespace !== null) {
-            return array_values($this->server->getNamespaceManager()->getClientsInRoom($room, $namespace));
+            return array_values($this->server->getClientsInRoom($room, $namespace));
         }
 
         if ($namespace !== null) {
-            return array_values($this->server->getNamespaceManager()->getClientsInNamespace($namespace));
+            return array_values($this->server->getClientsInNamespace($namespace));
         }
 
         return $this->server->getClientIds();

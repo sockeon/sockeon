@@ -78,6 +78,15 @@ class HandshakeRequest
             $uri = $request->server['request_uri'];
         }
 
+        if (
+            isset($request->server['query_string'])
+            && is_string($request->server['query_string'])
+            && $request->server['query_string'] !== ''
+            && !str_contains($uri, '?')
+        ) {
+            $uri .= '?' . $request->server['query_string'];
+        }
+
         $lines = ["GET {$uri} HTTP/1.1"];
 
         if (isset($request->header) && is_array($request->header)) {

@@ -13,6 +13,7 @@ class RedisNamespaceManager implements NamespaceManagerInterface
     public function __construct(
         private ScaleConfig $config,
         private Redis $redis,
+        private ?RedisClientDataStore $clientDataStore = null,
     ) {
         $this->prefix = $config->getRedisPrefix();
     }
@@ -70,12 +71,18 @@ class RedisNamespaceManager implements NamespaceManagerInterface
 
     public function getClientsInNamespace(string $namespace = '/'): array
     {
-        return $this->filterLocalMembers($this->smembers($this->namespaceKey($namespace)));
+        return $this->filterActiveClients(
+            $this->filterLocalMembers($this->smembers($this->namespaceKey($namespace))),
+            $this->namespaceKey($namespace),
+        );
     }
 
     public function getClientsInRoom(string $room, string $namespace = '/'): array
     {
-        return $this->filterLocalMembers($this->smembers($this->roomKey($namespace, $room)));
+        return $this->filterActiveClients(
+            $this->filterLocalMembers($this->smembers($this->roomKey($namespace, $room))),
+            $this->roomKey($namespace, $room),
+        );
     }
 
     public function getRooms(string $namespace = '/'): array
@@ -157,6 +164,30 @@ class RedisNamespaceManager implements NamespaceManagerInterface
         }
 
         return $clients;
+    }
+
+    /**
+     * @param array<string, string> $clients
+     * @return array<string, string>
+     */
+    private function filterActiveClients(array $clients, string $setKey): array
+    {
+        if ($this->clientDataStore === null) {
+            return $clients;
+        }
+
+        $active = [];
+
+        foreach ($clients as $clientId) {
+            if ($this->clientDataStore->has($clientId)) {
+                $active[$clientId] = $clientId;
+                continue;
+            }
+
+            $this->redis->sRem($setKey, $this->memberKey($clientId));
+        }
+
+        return $active;
     }
 
     private function namespaceKey(string $namespace): string

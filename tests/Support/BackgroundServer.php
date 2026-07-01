@@ -52,12 +52,13 @@ final class BackgroundServer
             $chunk = fread($pipes[1], 8192);
             if (is_string($chunk) && $chunk !== '') {
                 $stdout .= $chunk;
-                if (str_contains($stdout, 'Listening on')) {
-                    fclose($pipes[1]);
-                    fclose($pipes[2]);
+            }
 
-                    return $process;
-                }
+            if (self::isPortListening('127.0.0.1', $port)) {
+                fclose($pipes[1]);
+                fclose($pipes[2]);
+
+                return $process;
             }
 
             usleep(20_000);
@@ -90,5 +91,18 @@ final class BackgroundServer
         }
 
         proc_close($process);
+    }
+
+    private static function isPortListening(string $host, int $port): bool
+    {
+        $socket = @fsockopen($host, $port, $errno, $errstr, 0.2);
+
+        if ($socket === false) {
+            return false;
+        }
+
+        fclose($socket);
+
+        return true;
     }
 }

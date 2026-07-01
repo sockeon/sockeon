@@ -33,6 +33,8 @@ class RedisFactory
             $redis->select($config->getRedisDatabase());
         }
 
+        $redis->setOption(Redis::OPT_READ_TIMEOUT, -1);
+
         return $redis;
     }
 }

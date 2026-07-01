@@ -7,6 +7,7 @@ use Sockeon\Sockeon\Config\SwooleEngineConfig;
 use Sockeon\Sockeon\Connection\Server;
 use Sockeon\Sockeon\Contracts\Engine\EngineInterface;
 use Sockeon\Sockeon\Core\Config;
+use Sockeon\Sockeon\Publisher\RedisPublisher;
 use Sockeon\Sockeon\Registry\SwooleTableClientRegistry;
 use Sockeon\Sockeon\WebSocket\HandshakeRequest;
 use Throwable;
@@ -64,7 +65,7 @@ class SwooleEngine implements EngineInterface
         }
 
         $this->server->bootstrapEngineRuntime();
-        $this->server->getLogger()->info('[Sockeon Server] Starting Swoole engine...');
+        $this->server->getLogger()->debug('[Sockeon Server] Starting Swoole engine...');
 
         $host = $this->server->getHost();
         $port = $this->server->getPort();
@@ -106,7 +107,12 @@ class SwooleEngine implements EngineInterface
             $this->startWorkerTimers($workerId);
         });
 
-        $this->server->getLogger()->info("[Sockeon Server] Listening on swoole://{$host}:{$port}");
+        $publisher = $this->server->getPublisher();
+        if ($publisher instanceof RedisPublisher) {
+            $publisher->registerSwooleSubscriber($server);
+        }
+
+        $this->server->getLogger()->debug("[Sockeon Server] Listening on {$host}:{$port}");
         $server->start();
     }
 

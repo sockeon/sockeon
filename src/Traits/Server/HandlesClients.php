@@ -35,7 +35,6 @@ trait HandlesClients
         $this->performanceMonitor = new PerformanceMonitor();
         $this->registerTaskProcessors();
         $this->startTime = microtime(true);
-        $this->publisher->start();
     }
 
     public function runEngineLoopHooks(): void
@@ -176,9 +175,7 @@ trait HandlesClients
             unset($this->clients[$clientId], $this->clientTypes[$clientId]);
             unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
 
-            if (isset($this->clientData[$clientId])) {
-                unset($this->clientData[$clientId]);
-            }
+            $this->clearClientData($clientId);
 
             if ($resourceId !== null) {
                 unset($this->resourceToClientId[$resourceId]);
@@ -304,9 +301,7 @@ trait HandlesClients
         unset($this->clients[$clientId], $this->clientTypes[$clientId]);
         unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
 
-        if (isset($this->clientData[$clientId])) {
-            unset($this->clientData[$clientId]);
-        }
+        $this->clearClientData($clientId);
 
         if ($resourceId !== null) {
             unset($this->resourceToClientId[$resourceId]);
@@ -468,9 +463,7 @@ trait HandlesClients
 
                 unset($this->clients[$clientId], $this->clientTypes[$clientId]);
 
-                if (isset($this->clientData[$clientId])) {
-                    unset($this->clientData[$clientId]);
-                }
+                $this->clearClientData($clientId);
 
                 unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
 
@@ -492,15 +485,54 @@ trait HandlesClients
     public function setClientData(string $clientId, string $key, mixed $value): void
     {
         $this->clientData[$clientId][$key] = $value;
+
+        if ($this->redisClientDataStore !== null) {
+            $this->redisClientDataStore->set($clientId, $key, $value);
+        }
     }
 
     public function getClientData(string $clientId, ?string $key = null): mixed
     {
-        if (!isset($this->clientData[$clientId])) {
+        if ($key === null) {
+            if (isset($this->clientData[$clientId])) {
+                return $this->clientData[$clientId];
+            }
+
+            if ($this->redisClientDataStore === null) {
+                return null;
+            }
+
+            $data = $this->redisClientDataStore->get($clientId);
+            if (is_array($data)) {
+                $this->clientData[$clientId] = $data;
+            }
+
+            return $data;
+        }
+
+        if (isset($this->clientData[$clientId][$key])) {
+            return $this->clientData[$clientId][$key];
+        }
+
+        if ($this->redisClientDataStore === null) {
             return null;
         }
 
-        return $key === null ? $this->clientData[$clientId] : ($this->clientData[$clientId][$key] ?? null);
+        $value = $this->redisClientDataStore->get($clientId, $key);
+        if ($value !== null) {
+            $this->clientData[$clientId][$key] = $value;
+        }
+
+        return $value;
+    }
+
+    protected function clearClientData(string $clientId): void
+    {
+        unset($this->clientData[$clientId]);
+
+        if ($this->redisClientDataStore !== null) {
+            $this->redisClientDataStore->delete($clientId);
+        }
     }
 
     /**

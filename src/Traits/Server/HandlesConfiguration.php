@@ -7,6 +7,8 @@ use Sockeon\Sockeon\Config\ServerConfig;
 use Sockeon\Sockeon\Controllers\SystemRoomController;
 use Sockeon\Sockeon\Core\Config;
 use Sockeon\Sockeon\Core\Middleware;
+use Sockeon\Sockeon\Core\RedisClientDataStore;
+use Sockeon\Sockeon\Core\RedisFactory;
 use Sockeon\Sockeon\Contracts\Namespace\NamespaceManagerInterface;
 use Sockeon\Sockeon\Scale\ScaleFactory;
 use Sockeon\Sockeon\Core\Router;
@@ -64,7 +66,18 @@ trait HandlesConfiguration
         $this->router = new Router();
         $this->wsHandler = new WebSocketHandler($this, $this->resolveAllowedOrigins($config->getCorsConfig()));
         $this->httpHandler = new HttpHandler($this, $config->getCorsConfig());
-        $this->namespaceManager = ScaleFactory::createNamespaceManager($config->getScaleConfig());
+
+        if ($this->scaleConfig->isRedisRegistry()) {
+            $this->redisClientDataStore = new RedisClientDataStore(
+                $this->scaleConfig,
+                RedisFactory::connect($this->scaleConfig),
+            );
+        }
+
+        $this->namespaceManager = ScaleFactory::createNamespaceManager(
+            $config->getScaleConfig(),
+            $this->redisClientDataStore,
+        );
         $this->middleware = new Middleware();
 
         if ($this->rateLimitConfig && $this->rateLimitConfig->isEnabled()) {

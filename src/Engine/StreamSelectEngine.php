@@ -14,6 +14,8 @@ class StreamSelectEngine implements EngineInterface
     /** @var resource|false */
     private $socket = false;
 
+    private bool $shouldStop = false;
+
     public function setServer(Server $server): void
     {
         $this->server = $server;
@@ -22,6 +24,7 @@ class StreamSelectEngine implements EngineInterface
     public function start(): void
     {
         $this->server->bootstrapEngineRuntime();
+        $this->server->getPublisher()->start();
         $this->bindSocket();
         $this->loop();
     }
@@ -70,10 +73,11 @@ class StreamSelectEngine implements EngineInterface
         $port = $this->server->getPort();
         $logger = $this->server->getLogger();
 
-        $logger->info('[Sockeon Server] Starting server...');
+        $logger->debug('[Sockeon Server] Starting server...');
 
         $context = stream_context_create([
             'socket' => [
+                'so_reuseaddr' => 1,
                 'so_reuseport' => 1,
                 'so_keepalive' => 1,
                 'backlog' => 1024,
@@ -105,12 +109,14 @@ class StreamSelectEngine implements EngineInterface
             }
         }
 
-        $logger->info("[Sockeon Server] Listening on tcp://{$host}:{$port}");
+        $logger->debug("[Sockeon Server] Listening on {$host}:{$port}");
     }
 
     private function loop(): void
     {
-        while (is_resource($this->socket)) {
+        $this->registerSignalHandlers();
+
+        while (is_resource($this->socket) && ! $this->shouldStop) {
             try {
                 $this->server->runEngineLoopHooks();
 
@@ -150,6 +156,38 @@ class StreamSelectEngine implements EngineInterface
                 usleep(50000);
             }
         }
+
+        $this->shutdown();
+    }
+
+    private function registerSignalHandlers(): void
+    {
+        if (! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
+            return;
+        }
+
+        pcntl_async_signals(true);
+
+        $stop = function (): void {
+            $this->shouldStop = true;
+        };
+
+        pcntl_signal(SIGINT, $stop);
+        pcntl_signal(SIGTERM, $stop);
+    }
+
+    private function shutdown(): void
+    {
+        foreach ($this->server->getClientIds() as $clientId) {
+            $this->server->disconnectClient($clientId);
+        }
+
+        if (is_resource($this->socket)) {
+            fclose($this->socket);
+            $this->socket = false;
+        }
+
+        $this->server->getLogger()->debug('[Sockeon Server] Stopped.');
     }
 
     /**

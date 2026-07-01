@@ -171,7 +171,7 @@ abstract class SocketController
      */
     public function getClientsInNamespace(string $namespace = '/'): array
     {
-        return $this->server->getNamespaceManager()->getClientsInNamespace($namespace);
+        return $this->server->getClientsInNamespace($namespace);
     }
 
     /**
@@ -206,7 +206,7 @@ abstract class SocketController
      */
     public function getClientsInRoom(string $room, string $namespace = '/'): array
     {
-        return $this->server->getNamespaceManager()->getClientsInRoom($room, $namespace);
+        return $this->server->getClientsInRoom($room, $namespace);
     }
 
     /**
