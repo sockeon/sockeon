@@ -199,7 +199,15 @@ class Handler
             }
 
             [$name, $value] = explode(':', $line, 2);
-            $swooleResponse->header(trim($name), trim($value));
+            $name = trim($name);
+            $value = trim($value);
+
+            // Swoole sets length via end(); Content-Length + Accept-Encoding triggers ERRNO 7105.
+            if (strcasecmp($name, 'Content-Length') === 0 || strcasecmp($name, 'Connection') === 0) {
+                continue;
+            }
+
+            $swooleResponse->header($name, $value);
         }
 
         $swooleResponse->end($body);

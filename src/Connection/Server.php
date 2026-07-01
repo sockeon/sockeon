@@ -193,7 +193,7 @@ class Server
         // Format: sockeon_{timestamp}_{counter}_{random}
         return sprintf(
             'sockeon_%s_%d_%s',
-            base_convert((string) microtime(true), 10, 36),
+            base_convert((string) (int) floor(microtime(true) * 1000), 10, 36),
             $this->clientIdCounter,
             bin2hex(random_bytes(4))
         );
@@ -329,10 +329,11 @@ class Server
             return null;
         }
 
-        $seconds = $uptime % 60;
-        $minutes = (int) (($uptime / 60) % 60);
-        $hours = (int) (($uptime / 3600) % 24);
-        $days = (int) ($uptime / 86400);
+        $uptimeSeconds = (int) floor($uptime);
+        $seconds = $uptimeSeconds % 60;
+        $minutes = intdiv($uptimeSeconds, 60) % 60;
+        $hours = intdiv($uptimeSeconds, 3600) % 24;
+        $days = intdiv($uptimeSeconds, 86400);
 
         $parts = [];
         if ($days > 0) {

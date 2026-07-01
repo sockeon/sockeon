@@ -33,6 +33,9 @@ class SwooleEngineConfig
 
         if (isset($config['client_table_size']) && is_numeric($config['client_table_size'])) {
             $this->clientTableSize = (int) $config['client_table_size'];
+        } else {
+            // ponytail: size table to max_connection; default 131072 pre-allocates ~100MB+ unused
+            $this->clientTableSize = (int) min(131072, max(1024, (int) ceil($this->maxConnection * 1.1)));
         }
 
         if (isset($config['coroutine_dispatch'])) {

@@ -16,6 +16,7 @@ uses(TestCase::class)
 
         $logger = new Logger();
         $logger->setLogToConsole(false);
+        $logger->setLogToFile(false);
 
         $serverConfig = new ServerConfig();
         $serverConfig->setPort($port);

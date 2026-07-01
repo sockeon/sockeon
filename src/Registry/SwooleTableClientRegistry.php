@@ -22,7 +22,7 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
 
         return sprintf(
             'sockeon_%s_%d_%s',
-            base_convert((string) microtime(true), 10, 36),
+            base_convert((string) (int) floor(microtime(true) * 1000), 10, 36),
             $this->clientIdCounter,
             bin2hex(random_bytes(4))
         );

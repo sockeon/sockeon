@@ -62,20 +62,24 @@ test('server uses local publisher and namespace manager by default', function ()
 
 test('scale factory creates redis namespace manager when configured', function () {
     if (!extension_loaded('redis')) {
-        test()->markTestSkipped('ext-redis not available');
+        test()->markTestSkipped('ext-redis not available (enable igbinary + redis in php.ini)');
     }
 
-    $manager = ScaleFactory::createNamespaceManager(new ScaleConfig([
-        'registry' => 'redis',
-        'redis' => ['database' => 15],
-    ]));
+    try {
+        $manager = ScaleFactory::createNamespaceManager(new ScaleConfig([
+            'registry' => 'redis',
+            'redis' => ['database' => 15],
+        ]));
+    } catch (Throwable $e) {
+        test()->markTestSkipped('Redis not reachable: ' . $e->getMessage());
+    }
 
     expect($manager)->toBeInstanceOf(RedisNamespaceManager::class);
 });
 
 test('redis namespace manager tracks local room membership', function () {
     if (!extension_loaded('redis')) {
-        test()->markTestSkipped('ext-redis not available');
+        test()->markTestSkipped('ext-redis not available (enable igbinary + redis in php.ini)');
     }
 
     $scaleConfig = new ScaleConfig([
@@ -87,7 +91,12 @@ test('redis namespace manager tracks local room membership', function () {
         ],
     ]);
 
-    $manager = ScaleFactory::createNamespaceManager($scaleConfig);
+    try {
+        $manager = ScaleFactory::createNamespaceManager($scaleConfig);
+    } catch (Throwable $e) {
+        test()->markTestSkipped('Redis not reachable: ' . $e->getMessage());
+    }
+
     expect($manager)->toBeInstanceOf(RedisNamespaceManager::class);
 
     $manager->joinNamespace('client-1', '/');

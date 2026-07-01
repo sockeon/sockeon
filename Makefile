@@ -19,7 +19,7 @@ phpcs-fix: ## Run PHP CS Fixer and fix issues
 	vendor/bin/php-cs-fixer fix
 
 pest: ## Run Pest tests
-	vendor/bin/pest
+	php -d extension=igbinary -d extension=redis vendor/bin/pest
 
 test: ## Run all tests and checks
 	@echo "Running PHPStan..."
