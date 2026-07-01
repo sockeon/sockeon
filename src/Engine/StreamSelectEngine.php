@@ -129,7 +129,19 @@ class StreamSelectEngine implements EngineInterface
                 $timeoutSeconds = 0;
                 $timeoutMicroseconds = $clientCount === 0 ? 100000 : 10000;
 
-                if (@stream_select($read, $write, $except, $timeoutSeconds, $timeoutMicroseconds)) {
+                $selectResult = stream_select($read, $write, $except, $timeoutSeconds, $timeoutMicroseconds);
+
+                if ($selectResult === false) {
+                    $this->server->getLogger()->error('[Sockeon Engine] stream_select failed', [
+                        'client_count' => $clientCount,
+                        'error' => error_get_last()['message'] ?? 'unknown',
+                    ]);
+                    usleep(10000);
+
+                    continue;
+                }
+
+                if ($selectResult > 0) {
                     $this->acceptNewClients($read);
                     $this->handleClientData($read);
                 }
@@ -150,7 +162,8 @@ class StreamSelectEngine implements EngineInterface
         }
 
         $acceptedCount = 0;
-        $maxAcceptPerLoop = min(5, 10000 - $this->server->getClientCount());
+        $remainingCapacity = $this->server->getMaxConnections() - $this->server->getClientCount();
+        $maxAcceptPerLoop = min(64, max(0, $remainingCapacity));
 
         while (($client = @stream_socket_accept($this->socket, 0)) !== false && $acceptedCount < $maxAcceptPerLoop) {
             if (is_resource($client)) {

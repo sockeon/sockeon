@@ -43,6 +43,8 @@ trait HandlesConfiguration
 
         $this->rateLimitConfig = $config->getRateLimitConfig();
 
+        $this->survivabilityConfig = $config->getSurvivabilityConfig();
+
         $this->maxMessageSize = $config->getMaxMessageSize();
 
         $this->logger = $config->getLogger() ?? new Logger(

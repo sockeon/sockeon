@@ -49,6 +49,11 @@ class ServerConfig
     protected ?RateLimitConfig $rateLimitConfig = null;
 
     /**
+     * Connection survivability limits (hard caps, always enforced).
+     */
+    protected SurvivabilityConfig $survivabilityConfig;
+
+    /**
      * Trust proxy settings for reverse proxy/load balancer support.
      * Can be:
      * - true: Trust all proxies
@@ -155,6 +160,16 @@ class ServerConfig
             /** @var array<string, mixed> $rateLimitConfig */
             $rateLimitConfig = $config['rate_limit'];
             $this->rateLimitConfig = new RateLimitConfig($rateLimitConfig);
+        }
+
+        if (isset($config['survivability']) && $config['survivability'] instanceof SurvivabilityConfig) {
+            $this->survivabilityConfig = $config['survivability'];
+        } elseif (isset($config['survivability']) && is_array($config['survivability'])) {
+            /** @var array<string, mixed> $survivabilityConfig */
+            $survivabilityConfig = $config['survivability'];
+            $this->survivabilityConfig = new SurvivabilityConfig($survivabilityConfig);
+        } else {
+            $this->survivabilityConfig = new SurvivabilityConfig();
         }
 
         // Initialize trust proxy settings
@@ -451,5 +466,15 @@ class ServerConfig
     public function setRegisterSystemControllers(bool $register): void
     {
         $this->registerSystemControllers = $register;
+    }
+
+    public function getSurvivabilityConfig(): SurvivabilityConfig
+    {
+        return $this->survivabilityConfig;
+    }
+
+    public function setSurvivabilityConfig(SurvivabilityConfig $survivabilityConfig): void
+    {
+        $this->survivabilityConfig = $survivabilityConfig;
     }
 }

@@ -4,6 +4,7 @@ namespace Sockeon\Sockeon\Connection;
 
 use Sockeon\Sockeon\Config\RateLimitConfig;
 use Sockeon\Sockeon\Config\ServerConfig;
+use Sockeon\Sockeon\Config\SurvivabilityConfig;
 use Sockeon\Sockeon\Contracts\Engine\EngineInterface;
 use Sockeon\Sockeon\Contracts\LoggerInterface;
 use Sockeon\Sockeon\Engine\StreamSelectEngine;
@@ -74,6 +75,8 @@ class Server
     protected LoggerInterface $logger;
 
     protected ?RateLimitConfig $rateLimitConfig = null;
+
+    protected SurvivabilityConfig $survivabilityConfig;
 
     protected ?string $healthCheckPath = null;
 
@@ -206,6 +209,16 @@ class Server
     public function getClientCount(): int
     {
         return count($this->clients);
+    }
+
+    public function getMaxConnections(): int
+    {
+        return $this->survivabilityConfig->getMaxConnections();
+    }
+
+    public function getSurvivabilityConfig(): SurvivabilityConfig
+    {
+        return $this->survivabilityConfig;
     }
 
     /**

@@ -74,20 +74,49 @@ trait HandlesClients
     }
 
     /**
+     * Active connection count per IP address
+     * @var array<string, int>
+     */
+    protected array $connectionsPerIp = [];
+
+    /**
+     * Client IP addresses keyed by client ID
+     * @var array<string, string>
+     */
+    protected array $clientIps = [];
+
+    /**
      * @param resource $client
      */
     public function acceptClientConnection($client): void
     {
-        $clientId = $this->generateClientId();
         $resourceId = (int) $client;
-        $this->resourceToClientId[$resourceId] = $clientId;
 
-        if (count($this->clients) >= 10000) {
+        if ($this->getClientCount() >= $this->getMaxConnections()) {
             @fclose($client);
-            unset($this->resourceToClientId[$resourceId]);
-            $this->logger->warning('[Sockeon Connection] Connection limit reached, rejecting client');
+            $this->logger->warning('[Sockeon Connection] Connection limit reached, rejecting client', [
+                'max_connections' => $this->getMaxConnections(),
+            ]);
 
             return;
+        }
+
+        $clientIp = $this->getPeerIpFromResource($client);
+        if ($clientIp !== null && !$this->isConnectionAllowed($clientIp)) {
+            @fclose($client);
+            $this->logger->warning('[Sockeon Connection] Connection rate limit exceeded, rejecting client', [
+                'ip' => $clientIp,
+            ]);
+
+            return;
+        }
+
+        $clientId = $this->generateClientId();
+        $this->resourceToClientId[$resourceId] = $clientId;
+
+        if ($clientIp !== null) {
+            $this->clientIps[$clientId] = $clientIp;
+            $this->connectionsPerIp[$clientIp] = ($this->connectionsPerIp[$clientIp] ?? 0) + 1;
         }
 
         $pooledConnection = $this->connectionPool->acquireConnection('unknown', $clientId, $client);
@@ -141,9 +170,7 @@ trait HandlesClients
                 return;
             }
 
-            $readCheck = [$client];
-            $write = $except = null;
-            if (@stream_select($readCheck, $write, $except, 0, 0) === false || @feof($client)) {
+            if (@feof($client)) {
                 $this->disconnectClient($clientId);
 
                 return;
@@ -215,6 +242,8 @@ trait HandlesClients
         if ($resourceId !== null) {
             unset($this->resourceToClientId[$resourceId]);
         }
+
+        $this->decrementConnectionCountForClient($clientId);
 
         $this->namespaceManager->leaveNamespace($clientId);
     }
@@ -321,16 +350,8 @@ trait HandlesClients
                 continue;
             }
 
-            // More thorough dead connection detection
-            $readCheck = [$client];
-            $write = $except = null;
-            $selectResult = @stream_select($readCheck, $write, $except, 0, 0);
-
-            // Connection is dead if:
-            // 1. Not a valid resource (already checked above)
-            // 2. stream_select fails (connection closed)
-            // 3. feof returns true (end of stream)
-            if ($selectResult === false || @feof($client)) {
+            // Connection is dead if not a valid resource or end-of-stream
+            if (@feof($client)) {
                 $deadConnections[] = $clientId;
             }
         }
@@ -388,6 +409,8 @@ trait HandlesClients
                     unset($this->resourceToClientId[$resourceId]);
                 }
 
+                $this->decrementConnectionCountForClient($clientId);
+
                 $this->namespaceManager->leaveNamespace($clientId);
 
                 $this->logger->debug("[Sockeon Connection] Client disconnected: $clientId");
@@ -409,6 +432,60 @@ trait HandlesClients
         }
 
         return $key === null ? $this->clientData[$clientId] : ($this->clientData[$clientId][$key] ?? null);
+    }
+
+    /**
+     * @param resource $resource
+     */
+    protected function getPeerIpFromResource($resource): ?string
+    {
+        $peerName = stream_socket_get_name($resource, true);
+        if ($peerName === false) {
+            return null;
+        }
+
+        $parts = explode(':', $peerName);
+
+        return $parts[0] !== '' ? $parts[0] : null;
+    }
+
+    protected function isConnectionAllowed(string $clientIp): bool
+    {
+        $rateLimitConfig = $this->rateLimitConfig;
+        if ($rateLimitConfig === null) {
+            return true;
+        }
+
+        if ($rateLimitConfig->isWhitelisted($clientIp)) {
+            return true;
+        }
+
+        if ($this->getClientCount() >= $rateLimitConfig->getMaxGlobalConnections()) {
+            return false;
+        }
+
+        $ipConnections = $this->connectionsPerIp[$clientIp] ?? 0;
+
+        return $ipConnections < $rateLimitConfig->getMaxConnectionsPerIp();
+    }
+
+    protected function decrementConnectionCountForClient(string $clientId): void
+    {
+        if (!isset($this->clientIps[$clientId])) {
+            return;
+        }
+
+        $clientIp = $this->clientIps[$clientId];
+        unset($this->clientIps[$clientId]);
+
+        if (!isset($this->connectionsPerIp[$clientIp])) {
+            return;
+        }
+
+        $this->connectionsPerIp[$clientIp]--;
+        if ($this->connectionsPerIp[$clientIp] <= 0) {
+            unset($this->connectionsPerIp[$clientIp]);
+        }
     }
 
     /**
