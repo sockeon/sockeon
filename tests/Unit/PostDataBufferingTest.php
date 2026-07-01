@@ -83,7 +83,6 @@ test('incomplete http request detection works', function () {
 
     $reflection = new ReflectionClass($server);
     $method = $reflection->getMethod('isCompleteHttpRequest');
-    $method->setAccessible(true);
 
     $isComplete = $method->invoke($server, $incompleteData);
     expect($isComplete)->toBeFalse();

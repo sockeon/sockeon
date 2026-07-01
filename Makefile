@@ -19,7 +19,7 @@ phpcs-fix: ## Run PHP CS Fixer and fix issues
 	vendor/bin/php-cs-fixer fix
 
 pest: ## Run Pest tests
-	vendor/bin/pest
+	php -d extension=igbinary -d extension=redis vendor/bin/pest
 
 test: ## Run all tests and checks
 	@echo "Running PHPStan..."
@@ -31,5 +31,5 @@ test: ## Run all tests and checks
 	@echo "Running Pest tests..."
 	@make pest
 
-clean: ## Clean vendor directory and lock file
-	rm -rf vendor composer.lock
+clean: ## Clean vendor directory
+	rm -rf vendor

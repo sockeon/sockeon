@@ -6,6 +6,14 @@ use Sockeon\Sockeon\Core\Config;
 
 trait HandlesQueue
 {
+    public function processQueueFromFile(): void
+    {
+        $queueFile = Config::getQueueFile();
+        if ($queueFile) {
+            $this->processQueue($queueFile);
+        }
+    }
+
     protected function processQueue(string $queueFile): void
     {
         if (!file_exists($queueFile) || !is_readable($queueFile)) {

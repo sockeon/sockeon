@@ -2,7 +2,6 @@
 
 namespace Sockeon\Sockeon\Traits\Server;
 
-use RuntimeException;
 use Sockeon\Sockeon\Core\Config;
 use Sockeon\Sockeon\Core\ConnectionPool;
 use Sockeon\Sockeon\Core\AsyncTaskQueue;
@@ -29,174 +28,177 @@ trait HandlesClients
      */
     protected PerformanceMonitor $performanceMonitor;
 
-    protected function startSocket(): void
+    public function bootstrapEngineRuntime(): void
     {
-        $this->logger->info("[Sockeon Server] Starting server...");
-
-        // Initialize scaling components
         $this->connectionPool = new ConnectionPool();
         $this->taskQueue = new AsyncTaskQueue();
         $this->performanceMonitor = new PerformanceMonitor();
-
-        // Register task processors
         $this->registerTaskProcessors();
-
-        // Record server start time
         $this->startTime = microtime(true);
-
-        // Create socket with optimized options
-        $context = stream_context_create([
-            'socket' => [
-                'so_reuseport' => 1,
-                'so_keepalive' => 1,
-                'backlog' => 1024,
-            ],
-        ]);
-
-        $this->socket = stream_socket_server(
-            "tcp://{$this->host}:{$this->port}",
-            $errno,
-            $errstr,
-            STREAM_SERVER_BIND | STREAM_SERVER_LISTEN,
-            $context
-        );
-
-        if (!$this->socket) {
-            $errorNumber = is_int($errno) ? $errno : 0;
-            $errorString = is_string($errstr) ? $errstr : 'Unknown error';
-            throw new RuntimeException("Failed to create socket: $errorString ($errorNumber)");
-        }
-
-        stream_set_blocking($this->socket, false);
-
-        // Set socket options for better performance
-        if (function_exists('socket_import_stream')) {
-            $socketResource = socket_import_stream($this->socket);
-            if ($socketResource !== false) {
-                socket_set_option($socketResource, SOL_SOCKET, SO_RCVBUF, 262144); // 256KB receive buffer
-                socket_set_option($socketResource, SOL_SOCKET, SO_SNDBUF, 262144); // 256KB send buffer
-                socket_set_option($socketResource, SOL_TCP, TCP_NODELAY, 1); // Disable Nagle's algorithm
-            }
-        }
-        $this->logger->info("[Sockeon Server] Listening on tcp://{$this->host}:{$this->port}");
+        $this->publisher->start();
     }
 
-    protected function loop(): void
+    public function runEngineLoopHooks(): void
     {
-        $lastQueueCheck = microtime(true);
-        $lastBufferCleanup = microtime(true);
-        $lastTaskProcessing = microtime(true);
-        $lastMonitorUpdate = microtime(true);
+        static $lastQueueCheck = 0.0;
+        static $lastBufferCleanup = 0.0;
+        static $lastTaskProcessing = 0.0;
+        static $lastMonitorUpdate = 0.0;
 
-        while (is_resource($this->socket)) {
-            try {
-                // Process async tasks
-                if ((microtime(true) - $lastTaskProcessing) > 0.05) {
-                    $this->taskQueue->processTasks();
-                    $lastTaskProcessing = microtime(true);
-                }
+        $now = microtime(true);
 
-                // Update performance monitoring
-                if ((microtime(true) - $lastMonitorUpdate) > 1.0) {
-                    $this->updatePerformanceMetrics();
-                    $lastMonitorUpdate = microtime(true);
-                }
+        if (($now - $lastTaskProcessing) > 0.05) {
+            $this->taskQueue->processTasks();
+            $lastTaskProcessing = $now;
+        }
 
-                if ((microtime(true) - $lastQueueCheck) > 0.1) {
-                    $this->processQueue(Config::getQueueFile());
-                    $lastQueueCheck = microtime(true);
-                }
+        if (($now - $lastMonitorUpdate) > 1.0) {
+            $this->updatePerformanceMetrics();
+            $lastMonitorUpdate = $now;
+        }
 
-                if ((microtime(true) - $lastBufferCleanup) > 30) {
-                    $this->cleanupExpiredBuffers();
-                    $this->cleanupDeadConnections();
-                    $this->connectionPool->cleanup();
-                    $lastBufferCleanup = microtime(true);
+        if (($now - $lastQueueCheck) > 0.1) {
+            $this->processQueue(Config::getQueueFile());
+            $lastQueueCheck = $now;
+        }
 
-                    // Force garbage collection periodically
-                    if (function_exists('gc_collect_cycles')) {
-                        gc_collect_cycles();
-                    }
-                }
+        if (($now - $lastBufferCleanup) > 30) {
+            $this->cleanupExpiredBuffers();
+            $this->cleanupDeadConnections();
+            $this->connectionPool->cleanup();
+            $lastBufferCleanup = $now;
 
-                /** @var array<resource> $readSockets */
-                $readSockets = array_filter($this->clients, fn($client) => is_resource($client));
-                $readSockets[] = $this->socket;
-                /** @var array<resource> $read */
-                $read = $readSockets;
-
-                $write = $except = null;
-
-                // Optimize stream_select timeout based on activity
-                // When idle (no clients), use longer timeout to reduce CPU usage
-                // When active, use shorter timeout for better responsiveness
-                $clientCount = count($readSockets) - 1; // Subtract 1 for server socket
-                $timeoutSeconds = 0;
-                $timeoutMicroseconds = $clientCount === 0 ? 100000 : 10000; // 100ms idle, 10ms active
-
-                if (@stream_select($read, $write, $except, $timeoutSeconds, $timeoutMicroseconds)) {
-                    $this->acceptNewClient($read);
-                    $this->handleClientData($read);
-                }
-            } catch (Throwable $e) {
-                $this->logger->exception($e, ['context' => 'Main loop']);
-                usleep(50000); // Reduced sleep for faster recovery
+            if (function_exists('gc_collect_cycles')) {
+                gc_collect_cycles();
             }
-
-            // Remove redundant micro-sleep - stream_select timeout already handles CPU yielding
-            // Only sleep if stream_select was interrupted or failed
         }
     }
 
     /**
-     * @param array<resource> $read
+     * Active connection count per IP address
+     * @var array<string, int>
      */
-    protected function acceptNewClient(array &$read): void
+    protected array $connectionsPerIp = [];
+
+    /**
+     * Client IP addresses keyed by client ID
+     * @var array<string, string>
+     */
+    protected array $clientIps = [];
+
+    /**
+     * @param resource $client
+     */
+    public function acceptClientConnection($client): void
     {
-        if (in_array($this->socket, $read, true)) {
-            // Accept clients with connection limit to prevent overwhelming
-            $acceptedCount = 0;
-            $maxAcceptPerLoop = min(5, 10000 - count($this->clients)); // Limit total connections
+        $resourceId = (int) $client;
 
-            while (($client = @stream_socket_accept($this->socket, 0)) !== false && $acceptedCount < $maxAcceptPerLoop) {
-                if (is_resource($client)) {
-                    stream_set_blocking($client, false);
+        if ($this->getClientCount() >= $this->getMaxConnections()) {
+            @fclose($client);
+            $this->logger->warning('[Sockeon Connection] Connection limit reached, rejecting client', [
+                'max_connections' => $this->getMaxConnections(),
+            ]);
 
-                    // Generate unique client ID
-                    $clientId = $this->generateClientId();
-                    $resourceId = (int) $client;
-                    $this->resourceToClientId[$resourceId] = $clientId;
+            return;
+        }
 
-                    // Check if we're at capacity
-                    if (count($this->clients) >= 10000) {
-                        @fclose($client);
-                        unset($this->resourceToClientId[$resourceId]);
-                        $this->logger->warning("[Sockeon Connection] Connection limit reached, rejecting client");
-                        break;
-                    }
+        $clientIp = $this->getPeerIpFromResource($client);
+        if ($clientIp !== null && !$this->isConnectionAllowed($clientIp)) {
+            @fclose($client);
+            $this->logger->warning('[Sockeon Connection] Connection rate limit exceeded, rejecting client', [
+                'ip' => $clientIp,
+            ]);
 
-                    // Try to reuse connection from pool first
-                    $pooledConnection = $this->connectionPool->acquireConnection('unknown', $clientId, $client);
-                    $reuseCount = isset($pooledConnection['reuse_count']) && is_int($pooledConnection['reuse_count']) ? $pooledConnection['reuse_count'] : 0;
-                    if ($reuseCount > 0) {
-                        // Use pooled connection data for optimization
-                        $this->logger->debug("[Sockeon Connection] Reusing pooled connection for client: $clientId (reused $reuseCount times)");
-                    }
+            return;
+        }
 
-                    $this->clients[$clientId] = $client;
-                    $this->clientTypes[$clientId] = 'unknown';
-                    $this->namespaceManager->joinNamespace($clientId);
-                    $this->logger->debug("[Sockeon Connection] Client connected: $clientId");
+        $clientId = $this->generateClientId();
+        $this->resourceToClientId[$resourceId] = $clientId;
 
-                    // Update performance metrics
-                    $this->performanceMonitor->recordRequest('connection');
+        if ($clientIp !== null) {
+            $this->clientIps[$clientId] = $clientIp;
+            $this->connectionsPerIp[$clientIp] = ($this->connectionsPerIp[$clientIp] ?? 0) + 1;
+        }
 
-                    $acceptedCount++;
+        $pooledConnection = $this->connectionPool->acquireConnection('unknown', $clientId, $client);
+        $reuseCount = isset($pooledConnection['reuse_count']) && is_int($pooledConnection['reuse_count']) ? $pooledConnection['reuse_count'] : 0;
+        if ($reuseCount > 0) {
+            $this->logger->debug("[Sockeon Connection] Reusing pooled connection for client: $clientId (reused $reuseCount times)");
+        }
+
+        $this->clients[$clientId] = $client;
+        $this->clientTypes[$clientId] = 'unknown';
+        $this->namespaceManager->joinNamespace($clientId);
+        $this->logger->debug("[Sockeon Connection] Client connected: $clientId");
+        $this->performanceMonitor->recordRequest('connection');
+    }
+
+    public function registerSwooleClient(string $clientId, int $fd, string $type = 'ws', ?string $clientIp = null): void
+    {
+        $this->resourceToClientId[$fd] = $clientId;
+
+        if ($clientIp !== null) {
+            $this->clientIps[$clientId] = $clientIp;
+            $this->connectionsPerIp[$clientIp] = ($this->connectionsPerIp[$clientIp] ?? 0) + 1;
+        }
+
+        $this->clients[$clientId] = $fd;
+        $this->clientTypes[$clientId] = $type;
+        $this->namespaceManager->joinNamespace($clientId);
+        $this->performanceMonitor->recordRequest('connection');
+    }
+
+    /**
+     * @var array<string, true>
+     */
+    protected array $finalizingClients = [];
+
+    public function finalizeSwooleClientDisconnect(string $clientId): void
+    {
+        if (!isset($this->clients[$clientId]) || isset($this->finalizingClients[$clientId])) {
+            return;
+        }
+
+        $this->finalizingClients[$clientId] = true;
+
+        try {
+            if (($this->clientTypes[$clientId] ?? null) === 'ws') {
+                try {
+                    $this->router->dispatchSpecialEvent($clientId, 'disconnect');
+                } catch (Throwable $e) {
+                    // Ignore disconnect event errors
                 }
             }
 
-            unset($read[array_search($this->socket, $read, true)]);
+            $client = $this->clients[$clientId];
+            $resourceId = is_int($client) ? $client : null;
+
+            unset($this->clients[$clientId], $this->clientTypes[$clientId]);
+            unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
+
+            if (isset($this->clientData[$clientId])) {
+                unset($this->clientData[$clientId]);
+            }
+
+            if ($resourceId !== null) {
+                unset($this->resourceToClientId[$resourceId]);
+            }
+
+            $this->decrementConnectionCountForClient($clientId);
+            $this->namespaceManager->leaveNamespace($clientId);
+            $this->engine->forgetClient($clientId);
+
+            $this->logger->debug("[Sockeon Connection] Client disconnected: $clientId");
+        } catch (Throwable $e) {
+            $this->logger->exception($e, ['context' => 'Swoole client disconnection', 'clientId' => $clientId]);
+        } finally {
+            unset($this->finalizingClients[$clientId]);
         }
+    }
+
+    public function isConnectionAllowedForIp(string $clientIp): bool
+    {
+        return $this->isConnectionAllowed($clientIp);
     }
 
     /**
@@ -218,83 +220,101 @@ trait HandlesClients
     protected int $maxBufferSize = 10485760; // 10MB
 
     /**
-     * @param array<resource> $read
+     * @param resource $client
      */
-    protected function handleClientData(array $read): void
+    public function processReadableClient($client): void
     {
-        foreach ($read as $client) {
-            $clientId = $this->getClientIdFromResource($client);
+        $clientId = $this->getClientIdFromResource($client);
 
-            if ($clientId === null) {
-                // Unknown client, disconnect
-                @fclose($client);
-                continue;
-            }
+        if ($clientId === null) {
+            @fclose($client);
 
-            try {
-                // Proactive dead connection detection
-                if (!is_resource($client)) {
-                    $this->disconnectClient($clientId);
-                    continue;
-                }
-
-                // Check if connection is closed using stream_select or feof
-                $readCheck = [$client];
-                $write = $except = null;
-                if (@stream_select($readCheck, $write, $except, 0, 0) === false || @feof($client)) {
-                    $this->disconnectClient($clientId);
-                    continue;
-                }
-
-                $data = @fread($client, 32768); // Moderate buffer size
-
-                if ($data === '' || $data === false) {
-                    // Check if connection is actually closed
-                    if (@feof($client)) {
-                        $this->disconnectClient($clientId);
-                    }
-                    continue;
-                }
-
-                if (($this->clientTypes[$clientId] ?? 'unknown') === 'ws') {
-                    $this->handleHttpWs($clientId, $client, $data);
-                } else {
-                    if (!isset($this->clientBuffers[$clientId])) {
-                        $this->clientBuffers[$clientId] = '';
-                        $this->clientBufferTimestamps[$clientId] = microtime(true);
-                    }
-
-                    // Check buffer size to prevent overflow
-                    $currentBufferSize = strlen($this->clientBuffers[$clientId]);
-                    $newDataSize = strlen($data);
-                    if ($currentBufferSize + $newDataSize > $this->maxBufferSize) {
-                        $this->logger->warning("Client buffer overflow detected for client: $clientId", [
-                            'current_size' => $currentBufferSize,
-                            'new_data_size' => $newDataSize,
-                            'max_buffer_size' => $this->maxBufferSize,
-                        ]);
-                        $this->disconnectClient($clientId);
-                        continue;
-                    }
-
-                    $this->clientBuffers[$clientId] .= $data;
-
-                    if ($this->isCompleteHttpRequest($this->clientBuffers[$clientId])) {
-                        $this->handleHttpWs($clientId, $client, $this->clientBuffers[$clientId]);
-                        // Clear buffer immediately after use to free memory
-                        unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
-                    } else {
-                        if (microtime(true) - $this->clientBufferTimestamps[$clientId] > 15) {
-                            $this->logger->warning("Client buffer timeout for client: $clientId");
-                            $this->disconnectClient($clientId);
-                        }
-                    }
-                }
-            } catch (Throwable $e) {
-                $this->logger->exception($e, ['clientId' => $clientId, 'context' => 'handleClientData']);
-                $this->disconnectClient($clientId);
-            }
+            return;
         }
+
+        try {
+            if (!is_resource($client)) {
+                $this->disconnectClient($clientId);
+
+                return;
+            }
+
+            if (@feof($client)) {
+                $this->disconnectClient($clientId);
+
+                return;
+            }
+
+            $data = @fread($client, 32768);
+
+            if ($data === '' || $data === false) {
+                if (@feof($client)) {
+                    $this->disconnectClient($clientId);
+                }
+
+                return;
+            }
+
+            if (($this->clientTypes[$clientId] ?? 'unknown') === 'ws') {
+                $this->handleHttpWs($clientId, $client, $data);
+            } else {
+                if (!isset($this->clientBuffers[$clientId])) {
+                    $this->clientBuffers[$clientId] = '';
+                    $this->clientBufferTimestamps[$clientId] = microtime(true);
+                }
+
+                $currentBufferSize = strlen($this->clientBuffers[$clientId]);
+                $newDataSize = strlen($data);
+                if ($currentBufferSize + $newDataSize > $this->maxBufferSize) {
+                    $this->logger->warning("Client buffer overflow detected for client: $clientId", [
+                        'current_size' => $currentBufferSize,
+                        'new_data_size' => $newDataSize,
+                        'max_buffer_size' => $this->maxBufferSize,
+                    ]);
+                    $this->disconnectClient($clientId);
+
+                    return;
+                }
+
+                $this->clientBuffers[$clientId] .= $data;
+
+                if ($this->isCompleteHttpRequest($this->clientBuffers[$clientId])) {
+                    $this->handleHttpWs($clientId, $client, $this->clientBuffers[$clientId]);
+                    unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
+                } elseif (microtime(true) - $this->clientBufferTimestamps[$clientId] > 15) {
+                    $this->logger->warning("Client buffer timeout for client: $clientId");
+                    $this->disconnectClient($clientId);
+                }
+            }
+        } catch (Throwable $e) {
+            $this->logger->exception($e, ['clientId' => $clientId, 'context' => 'handleClientData']);
+            $this->disconnectClient($clientId);
+        }
+    }
+
+    public function forgetClient(string $clientId): void
+    {
+        if (!isset($this->clients[$clientId])) {
+            return;
+        }
+
+        $client = $this->clients[$clientId];
+        $resourceId = is_resource($client) ? (int) $client : null;
+
+        unset($this->clients[$clientId], $this->clientTypes[$clientId]);
+        unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
+
+        if (isset($this->clientData[$clientId])) {
+            unset($this->clientData[$clientId]);
+        }
+
+        if ($resourceId !== null) {
+            unset($this->resourceToClientId[$resourceId]);
+        }
+
+        $this->decrementConnectionCountForClient($clientId);
+
+        $this->namespaceManager->leaveNamespace($clientId);
     }
 
     /**
@@ -399,16 +419,8 @@ trait HandlesClients
                 continue;
             }
 
-            // More thorough dead connection detection
-            $readCheck = [$client];
-            $write = $except = null;
-            $selectResult = @stream_select($readCheck, $write, $except, 0, 0);
-
-            // Connection is dead if:
-            // 1. Not a valid resource (already checked above)
-            // 2. stream_select fails (connection closed)
-            // 3. feof returns true (end of stream)
-            if ($selectResult === false || @feof($client)) {
+            // Connection is dead if not a valid resource or end-of-stream
+            if (@feof($client)) {
                 $deadConnections[] = $clientId;
             }
         }
@@ -427,12 +439,11 @@ trait HandlesClients
     {
         try {
             if (isset($this->clients[$clientId])) {
-                // Get resource for cleanup
                 $client = $this->clients[$clientId];
-                $resourceId = is_resource($client) ? (int) $client : null;
+                $isResource = is_resource($client);
+                $resourceId = $isResource ? (int) $client : (is_int($client) ? $client : null);
 
-                // Only dispatch disconnect event if client was a WebSocket and still connected
-                if (($this->clientTypes[$clientId] ?? null) === 'ws' && is_resource($client)) {
+                if (($this->clientTypes[$clientId] ?? null) === 'ws' && $isResource) {
                     try {
                         $this->router->dispatchSpecialEvent($clientId, 'disconnect');
                     } catch (Throwable $e) {
@@ -440,33 +451,36 @@ trait HandlesClients
                     }
                 }
 
-                // Return connection to pool if it's still valid
-                if (is_resource($client) && !@feof($client)) {
-                    $this->connectionPool->releaseConnection($clientId);
-                } else {
-                    // Safe resource cleanup for invalid connections
-                    if (is_resource($client)) {
+                if ($isResource) {
+                    if (!@feof($client)) {
+                        $this->connectionPool->releaseConnection($clientId);
+                    } else {
                         @fclose($client);
                     }
+                } elseif (is_int($client)) {
+                    $this->engine->closeConnection($clientId, $client);
+                    if (!isset($this->finalizingClients[$clientId])) {
+                        $this->finalizeSwooleClientDisconnect($clientId);
+                    }
+
+                    return;
                 }
 
-                // Clean up all client data and buffers to free memory immediately
                 unset($this->clients[$clientId], $this->clientTypes[$clientId]);
 
-                // Explicitly clear client data array entry
                 if (isset($this->clientData[$clientId])) {
                     unset($this->clientData[$clientId]);
                 }
 
-                // Clear buffers to free memory
                 unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
 
-                // Clean up resource-to-clientId mapping
                 if ($resourceId !== null) {
                     unset($this->resourceToClientId[$resourceId]);
                 }
 
+                $this->decrementConnectionCountForClient($clientId);
                 $this->namespaceManager->leaveNamespace($clientId);
+                $this->engine->forgetClient($clientId);
 
                 $this->logger->debug("[Sockeon Connection] Client disconnected: $clientId");
             }
@@ -487,6 +501,60 @@ trait HandlesClients
         }
 
         return $key === null ? $this->clientData[$clientId] : ($this->clientData[$clientId][$key] ?? null);
+    }
+
+    /**
+     * @param resource $resource
+     */
+    protected function getPeerIpFromResource($resource): ?string
+    {
+        $peerName = stream_socket_get_name($resource, true);
+        if ($peerName === false) {
+            return null;
+        }
+
+        $parts = explode(':', $peerName);
+
+        return $parts[0] !== '' ? $parts[0] : null;
+    }
+
+    protected function isConnectionAllowed(string $clientIp): bool
+    {
+        $rateLimitConfig = $this->rateLimitConfig;
+        if ($rateLimitConfig === null) {
+            return true;
+        }
+
+        if ($rateLimitConfig->isWhitelisted($clientIp)) {
+            return true;
+        }
+
+        if ($this->getClientCount() >= $rateLimitConfig->getMaxGlobalConnections()) {
+            return false;
+        }
+
+        $ipConnections = $this->connectionsPerIp[$clientIp] ?? 0;
+
+        return $ipConnections < $rateLimitConfig->getMaxConnectionsPerIp();
+    }
+
+    protected function decrementConnectionCountForClient(string $clientId): void
+    {
+        if (!isset($this->clientIps[$clientId])) {
+            return;
+        }
+
+        $clientIp = $this->clientIps[$clientId];
+        unset($this->clientIps[$clientId]);
+
+        if (!isset($this->connectionsPerIp[$clientIp])) {
+            return;
+        }
+
+        $this->connectionsPerIp[$clientIp]--;
+        if ($this->connectionsPerIp[$clientIp] <= 0) {
+            unset($this->connectionsPerIp[$clientIp]);
+        }
     }
 
     /**

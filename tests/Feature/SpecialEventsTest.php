@@ -74,7 +74,6 @@ test('special events are registered correctly', function () {
 
     $reflection = new ReflectionClass($router);
     $specialEventHandlersProperty = $reflection->getProperty('specialEventHandlers');
-    $specialEventHandlersProperty->setAccessible(true);
     $specialEventHandlers = $specialEventHandlersProperty->getValue($router);
 
     expect($specialEventHandlers['connect'])->toHaveCount(1);
@@ -116,7 +115,6 @@ test('multiple controllers can have special event handlers', function () {
 
     $reflection = new ReflectionClass($router);
     $specialEventHandlersProperty = $reflection->getProperty('specialEventHandlers');
-    $specialEventHandlersProperty->setAccessible(true);
     $specialEventHandlers = $specialEventHandlersProperty->getValue($router);
 
     expect($specialEventHandlers['connect'])->toHaveCount(2);

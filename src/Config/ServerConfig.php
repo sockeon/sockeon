@@ -49,6 +49,20 @@ class ServerConfig
     protected ?RateLimitConfig $rateLimitConfig = null;
 
     /**
+     * Connection survivability limits (hard caps, always enforced).
+     */
+    protected SurvivabilityConfig $survivabilityConfig;
+
+    /**
+     * Runtime engine: stream_select (default) or swoole.
+     */
+    protected string $engine = 'stream_select';
+
+    protected SwooleEngineConfig $swooleEngineConfig;
+
+    protected ScaleConfig $scaleConfig;
+
+    /**
      * Trust proxy settings for reverse proxy/load balancer support.
      * Can be:
      * - true: Trust all proxies
@@ -155,6 +169,40 @@ class ServerConfig
             /** @var array<string, mixed> $rateLimitConfig */
             $rateLimitConfig = $config['rate_limit'];
             $this->rateLimitConfig = new RateLimitConfig($rateLimitConfig);
+        }
+
+        if (isset($config['survivability']) && $config['survivability'] instanceof SurvivabilityConfig) {
+            $this->survivabilityConfig = $config['survivability'];
+        } elseif (isset($config['survivability']) && is_array($config['survivability'])) {
+            /** @var array<string, mixed> $survivabilityConfig */
+            $survivabilityConfig = $config['survivability'];
+            $this->survivabilityConfig = new SurvivabilityConfig($survivabilityConfig);
+        } else {
+            $this->survivabilityConfig = new SurvivabilityConfig();
+        }
+
+        if (isset($config['engine']) && is_string($config['engine'])) {
+            $this->engine = $config['engine'];
+        }
+
+        if (isset($config['swoole']) && $config['swoole'] instanceof SwooleEngineConfig) {
+            $this->swooleEngineConfig = $config['swoole'];
+        } elseif (isset($config['swoole']) && is_array($config['swoole'])) {
+            /** @var array<string, mixed> $swooleConfig */
+            $swooleConfig = $config['swoole'];
+            $this->swooleEngineConfig = new SwooleEngineConfig($swooleConfig);
+        } else {
+            $this->swooleEngineConfig = new SwooleEngineConfig();
+        }
+
+        if (isset($config['scale']) && $config['scale'] instanceof ScaleConfig) {
+            $this->scaleConfig = $config['scale'];
+        } elseif (isset($config['scale']) && is_array($config['scale'])) {
+            /** @var array<string, mixed> $scaleConfig */
+            $scaleConfig = $config['scale'];
+            $this->scaleConfig = new ScaleConfig($scaleConfig);
+        } else {
+            $this->scaleConfig = new ScaleConfig();
         }
 
         // Initialize trust proxy settings
@@ -451,5 +499,45 @@ class ServerConfig
     public function setRegisterSystemControllers(bool $register): void
     {
         $this->registerSystemControllers = $register;
+    }
+
+    public function getSurvivabilityConfig(): SurvivabilityConfig
+    {
+        return $this->survivabilityConfig;
+    }
+
+    public function setSurvivabilityConfig(SurvivabilityConfig $survivabilityConfig): void
+    {
+        $this->survivabilityConfig = $survivabilityConfig;
+    }
+
+    public function getEngine(): string
+    {
+        return $this->engine;
+    }
+
+    public function setEngine(string $engine): void
+    {
+        $this->engine = $engine;
+    }
+
+    public function getSwooleEngineConfig(): SwooleEngineConfig
+    {
+        return $this->swooleEngineConfig;
+    }
+
+    public function setSwooleEngineConfig(SwooleEngineConfig $swooleEngineConfig): void
+    {
+        $this->swooleEngineConfig = $swooleEngineConfig;
+    }
+
+    public function getScaleConfig(): ScaleConfig
+    {
+        return $this->scaleConfig;
+    }
+
+    public function setScaleConfig(ScaleConfig $scaleConfig): void
+    {
+        $this->scaleConfig = $scaleConfig;
     }
 }

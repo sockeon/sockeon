@@ -15,4 +15,8 @@
             <directory>src</directory>
         </include>
     </source>
+    <php>
+        <ini name="extension" value="igbinary"/>
+        <ini name="extension" value="redis"/>
+    </php>
 </phpunit>

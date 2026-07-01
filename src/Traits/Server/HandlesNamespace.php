@@ -2,16 +2,14 @@
 
 namespace Sockeon\Sockeon\Traits\Server;
 
-use Sockeon\Sockeon\Core\NamespaceManager;
+use Sockeon\Sockeon\Contracts\Namespace\NamespaceManagerInterface;
 
 trait HandlesNamespace
 {
     /**
      * Get the current namespace manager.
-     *
-     * @return NamespaceManager
      */
-    public function getNamespaceManager(): NamespaceManager
+    public function getNamespaceManager(): NamespaceManagerInterface
     {
         return $this->namespaceManager;
     }

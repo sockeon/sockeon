@@ -2,12 +2,17 @@
 
 namespace Sockeon\Sockeon\Connection;
 
-use RuntimeException;
 use Sockeon\Sockeon\Config\RateLimitConfig;
+use Sockeon\Sockeon\Config\ScaleConfig;
 use Sockeon\Sockeon\Config\ServerConfig;
+use Sockeon\Sockeon\Config\SurvivabilityConfig;
+use Sockeon\Sockeon\Contracts\Engine\EngineInterface;
 use Sockeon\Sockeon\Contracts\LoggerInterface;
+use Sockeon\Sockeon\Contracts\Namespace\NamespaceManagerInterface;
+use Sockeon\Sockeon\Contracts\Publisher\PublisherInterface;
+use Sockeon\Sockeon\Engine\EngineFactory;
+use Sockeon\Sockeon\Engine\SwooleEngine;
 use Sockeon\Sockeon\Core\Middleware;
-use Sockeon\Sockeon\Core\NamespaceManager;
 use Sockeon\Sockeon\Core\Router;
 use Sockeon\Sockeon\Http\Handler as HttpHandler;
 use Sockeon\Sockeon\WebSocket\Handler as WebSocketHandler;
@@ -22,6 +27,7 @@ use Sockeon\Sockeon\Traits\Server\HandlesQueue;
 use Sockeon\Sockeon\Traits\Server\HandlesRooms;
 use Sockeon\Sockeon\Traits\Server\HandlesRouting;
 use Sockeon\Sockeon\Traits\Server\HandlesSendBroadcast;
+use Sockeon\Sockeon\Scale\ScaleFactory;
 
 class Server
 {
@@ -41,10 +47,9 @@ class Server
 
     protected int $port;
 
-    /** @var resource|false */
-    protected $socket;
+    protected EngineInterface $engine;
 
-    /** @var array<string, resource> */
+    /** @var array<string, resource|int> */
     protected array $clients = [];
 
     /** @var array<string, string> */
@@ -53,7 +58,9 @@ class Server
     /** @var array<string, array<string, mixed>> */
     protected array $clientData = [];
 
-    /** @var array<int, string> Maps resource ID to unique client ID */
+    /**
+     * @var array<int, string> Maps transport handle (resource id or Swoole fd) to client ID
+     */
     protected array $resourceToClientId = [];
 
     /** @var int Counter for generating sequential part of client ID */
@@ -65,7 +72,11 @@ class Server
 
     protected HttpHandler $httpHandler;
 
-    protected NamespaceManager $namespaceManager;
+    protected NamespaceManagerInterface $namespaceManager;
+
+    protected PublisherInterface $publisher;
+
+    protected ScaleConfig $scaleConfig;
 
     protected Middleware $middleware;
 
@@ -74,6 +85,8 @@ class Server
     protected LoggerInterface $logger;
 
     protected ?RateLimitConfig $rateLimitConfig = null;
+
+    protected SurvivabilityConfig $survivabilityConfig;
 
     protected ?string $healthCheckPath = null;
 
@@ -86,22 +99,64 @@ class Server
      */
     protected ?float $startTime = null;
 
-    public function __construct(ServerConfig $config)
+    public function __construct(ServerConfig $config, ?EngineInterface $engine = null)
     {
         $this->applyServerConfig($config);
         $this->initializeCoreComponents($config);
+        $this->publisher = ScaleFactory::createPublisher($this, $config);
+        $this->engine = $engine ?? EngineFactory::create($config);
+        $this->engine->setServer($this);
+    }
+
+    public function getPublisher(): PublisherInterface
+    {
+        return $this->publisher;
+    }
+
+    public function getScaleConfig(): ScaleConfig
+    {
+        return $this->scaleConfig;
     }
 
     public function run(): void
     {
-        $this->startSocket();
-        $this->loop();
+        $this->engine->start();
+    }
+
+    public function getEngine(): EngineInterface
+    {
+        return $this->engine;
+    }
+
+    public function getHost(): string
+    {
+        return $this->host;
+    }
+
+    public function getPort(): int
+    {
+        return $this->port;
+    }
+
+    public function getLogger(): LoggerInterface
+    {
+        return $this->logger;
+    }
+
+    /**
+     * @return resource|null
+     */
+    public function getClientResource(string $clientId)
+    {
+        $client = $this->clients[$clientId] ?? null;
+
+        return is_resource($client) ? $client : null;
     }
 
     /**
      * Get all connected clients
      *
-     * @return array<string, resource> Array of client IDs and their resources
+     * @return array<string, resource|int> Array of client IDs and their transport handles
      */
     public function getClients(): array
     {
@@ -139,7 +194,7 @@ class Server
         // Format: sockeon_{timestamp}_{counter}_{random}
         return sprintf(
             'sockeon_%s_%d_%s',
-            base_convert((string) microtime(true), 10, 36),
+            base_convert((string) (int) floor(microtime(true) * 1000), 10, 36),
             $this->clientIdCounter,
             bin2hex(random_bytes(4))
         );
@@ -164,6 +219,10 @@ class Server
      */
     public function getClientIds(): array
     {
+        if ($this->engine instanceof SwooleEngine) {
+            return $this->engine->getClientRegistry()->ids();
+        }
+
         return array_keys($this->clients);
     }
 
@@ -174,7 +233,21 @@ class Server
      */
     public function getClientCount(): int
     {
+        if ($this->engine instanceof SwooleEngine) {
+            return $this->engine->getClientRegistry()->count();
+        }
+
         return count($this->clients);
+    }
+
+    public function getMaxConnections(): int
+    {
+        return $this->survivabilityConfig->getMaxConnections();
+    }
+
+    public function getSurvivabilityConfig(): SurvivabilityConfig
+    {
+        return $this->survivabilityConfig;
     }
 
     /**
@@ -185,6 +258,10 @@ class Server
      */
     public function isClientConnected(string $clientId): bool
     {
+        if ($this->engine instanceof SwooleEngine) {
+            return $this->engine->getClientRegistry()->has($clientId);
+        }
+
         return isset($this->clients[$clientId]);
     }
 
@@ -196,6 +273,10 @@ class Server
      */
     public function getClientType(string $clientId): ?string
     {
+        if ($this->engine instanceof SwooleEngine) {
+            return $this->engine->getClientRegistry()->getType($clientId);
+        }
+
         return $this->clientTypes[$clientId] ?? null;
     }
 
@@ -265,10 +346,11 @@ class Server
             return null;
         }
 
-        $seconds = $uptime % 60;
-        $minutes = (int) (($uptime / 60) % 60);
-        $hours = (int) (($uptime / 3600) % 24);
-        $days = (int) ($uptime / 86400);
+        $uptimeSeconds = (int) floor($uptime);
+        $seconds = $uptimeSeconds % 60;
+        $minutes = intdiv($uptimeSeconds, 60) % 60;
+        $hours = intdiv($uptimeSeconds, 3600) % 24;
+        $days = intdiv($uptimeSeconds, 86400);
 
         $parts = [];
         if ($days > 0) {

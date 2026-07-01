@@ -1,8 +1,6 @@
 vendor
-composer.lock
 .idea
 .vscode
 examples
 docs
-mcp
 .php-cs-fixer.cache

@@ -19,7 +19,6 @@
 /bin export-ignore
 /examples export-ignore
 /docs export-ignore
-/mcp export-ignore
 /.gitignore export-ignore
 /.gitattributes export-ignore
 /phpunit.xml export-ignore

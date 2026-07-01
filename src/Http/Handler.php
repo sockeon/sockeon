@@ -104,4 +104,108 @@ class Handler
             }
         }
     }
+
+    /**
+     * Handle an HTTP request delivered by the Swoole engine.
+     *
+     * @param object $swooleRequest Swoole\Http\Request
+     */
+    public function handleSwoole(string $clientId, object $swooleRequest, \Swoole\Http\Response $swooleResponse): void
+    {
+        try {
+            $requestData = $this->buildRequestDataFromSwoole($swooleRequest);
+            $request = new Request($requestData);
+
+            if ($request->getMethod() === 'OPTIONS') {
+                $response = $this->handleCorsPreflightRequest($request);
+            } else {
+                $response = $this->applyCorsHeaders($request, $this->processRequest($request));
+            }
+
+            $this->sendSwooleHttpResponse($swooleResponse, $response);
+        } catch (Throwable $e) {
+            $this->server->getLogger()->exception($e, ['clientId' => $clientId, 'context' => 'HttpHandler::handleSwoole']);
+            $swooleResponse->status(500);
+            $swooleResponse->end('An error occurred while processing your request.');
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function buildRequestDataFromSwoole(object $swooleRequest): array
+    {
+        $method = 'GET';
+        if (isset($swooleRequest->server['request_method']) && is_string($swooleRequest->server['request_method'])) {
+            $method = $swooleRequest->server['request_method'];
+        }
+
+        $path = '/';
+        if (isset($swooleRequest->server['request_uri']) && is_string($swooleRequest->server['request_uri'])) {
+            $path = parse_url($swooleRequest->server['request_uri'], PHP_URL_PATH) ?: '/';
+        }
+
+        $headers = [];
+        if (isset($swooleRequest->header) && is_array($swooleRequest->header)) {
+            foreach ($swooleRequest->header as $name => $value) {
+                if (is_string($name) && (is_string($value) || is_numeric($value))) {
+                    $headers[$name] = (string) $value;
+                }
+            }
+        }
+
+        $query = [];
+        if (isset($swooleRequest->server['query_string']) && is_string($swooleRequest->server['query_string'])) {
+            parse_str($swooleRequest->server['query_string'], $query);
+        }
+
+        $body = '';
+        if (method_exists($swooleRequest, 'rawContent')) {
+            $raw = $swooleRequest->rawContent();
+            if (is_string($raw)) {
+                $body = $raw;
+            }
+        }
+
+        return [
+            'method' => $method,
+            'path' => $path,
+            'protocol' => 'HTTP/1.1',
+            'headers' => $headers,
+            'query' => $query,
+            'body' => $body,
+        ];
+    }
+
+    protected function sendSwooleHttpResponse(\Swoole\Http\Response $swooleResponse, string $rawResponse): void
+    {
+        $parts = explode("\r\n\r\n", $rawResponse, 2);
+        $headerSection = $parts[0] ?? '';
+        $body = $parts[1] ?? '';
+
+        $lines = explode("\r\n", $headerSection);
+        if (!empty($lines[0]) && preg_match('/HTTP\/\d\.\d\s+(\d+)/', $lines[0], $matches)) {
+            $swooleResponse->status((int) $matches[1]);
+        }
+
+        for ($i = 1; $i < count($lines); $i++) {
+            $line = $lines[$i];
+            if (!str_contains($line, ':')) {
+                continue;
+            }
+
+            [$name, $value] = explode(':', $line, 2);
+            $name = trim($name);
+            $value = trim($value);
+
+            // Swoole sets length via end(); Content-Length + Accept-Encoding triggers ERRNO 7105.
+            if (strcasecmp($name, 'Content-Length') === 0 || strcasecmp($name, 'Connection') === 0) {
+                continue;
+            }
+
+            $swooleResponse->header($name, $value);
+        }
+
+        $swooleResponse->end($body);
+    }
 }

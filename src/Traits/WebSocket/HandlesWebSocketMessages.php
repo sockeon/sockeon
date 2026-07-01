@@ -121,25 +121,24 @@ trait HandlesWebSocketMessages
                 $encodedMessage = '{"event":"error","data":{"message":"JSON encoding error","timestamp":' . time() . '}}';
             }
 
-            $frame = $this->encodeWebSocketFrame($encodedMessage);
+            if (!$this->server->isClientConnected($clientId)) {
+                $this->server->getLogger()->warning("Client not found: $clientId");
 
-            $clients = $this->server->getClients();
-            if (isset($clients[$clientId]) && is_resource($clients[$clientId])) {
-                $bytesWritten = fwrite($clients[$clientId], $frame);
+                return;
+            }
 
-                if ($bytesWritten === false || $bytesWritten < strlen($frame)) {
-                    $this->server->getLogger()->warning("Failed to send error message to client: $clientId", [
-                        'error_message' => $errorMessage,
-                        'bytes_written' => $bytesWritten,
-                        'frame_length' => strlen($frame),
-                    ]);
-                } else {
-                    $this->server->getLogger()->debug("Sent error message to client: $clientId", [
-                        'error_message' => $errorMessage,
-                    ]);
-                }
+            $payload = $this->server->getEngine()->framesOutboundWebSocket()
+                ? $this->encodeWebSocketFrame($encodedMessage)
+                : $encodedMessage;
+
+            if (!$this->server->getEngine()->send($clientId, $payload)) {
+                $this->server->getLogger()->warning("Failed to send error message to client: $clientId", [
+                    'error_message' => $errorMessage,
+                ]);
             } else {
-                $this->server->getLogger()->warning("Client not found or invalid resource: $clientId");
+                $this->server->getLogger()->debug("Sent error message to client: $clientId", [
+                    'error_message' => $errorMessage,
+                ]);
             }
         } catch (Throwable $e) {
             $this->server->getLogger()->exception($e, [
@@ -226,30 +225,27 @@ trait HandlesWebSocketMessages
                 return false;
             }
 
-            $frame = $this->encodeWebSocketFrame($encodedMessage);
-
-            $clients = $this->server->getClients();
-            if (isset($clients[$clientId]) && is_resource($clients[$clientId])) {
-                $bytesWritten = fwrite($clients[$clientId], $frame);
-
-                if ($bytesWritten === false || $bytesWritten < strlen($frame)) {
-                    $this->server->getLogger()->warning("Failed to send message to client: $clientId", [
-                        'event' => $event,
-                        'bytes_written' => $bytesWritten,
-                        'frame_length' => strlen($frame),
-                    ]);
-                    return false;
-                } else {
-                    $this->server->getLogger()->debug("Sent message to client: $clientId", [
-                        'event' => $event,
-                        'data_size' => count($data),
-                    ]);
-                    return true;
-                }
-            } else {
-                $this->server->getLogger()->warning("Client not found or invalid resource: $clientId");
+            if (!$this->server->isClientConnected($clientId)) {
+                $this->server->getLogger()->warning("Client not found: $clientId");
                 return false;
             }
+
+            $payload = $this->server->getEngine()->framesOutboundWebSocket()
+                ? $this->encodeWebSocketFrame($encodedMessage)
+                : $encodedMessage;
+
+            if (!$this->server->getEngine()->send($clientId, $payload)) {
+                $this->server->getLogger()->warning("Failed to send message to client: $clientId", [
+                    'event' => $event,
+                ]);
+                return false;
+            }
+
+            $this->server->getLogger()->debug("Sent message to client: $clientId", [
+                'event' => $event,
+                'data_size' => count($data),
+            ]);
+            return true;
         } catch (Throwable $e) {
             $this->server->getLogger()->exception($e, [
                 'clientId' => $clientId,

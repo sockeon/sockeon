@@ -15,7 +15,7 @@ namespace Sockeon\Sockeon\Controllers;
 
 use Sockeon\Sockeon\Connection\Server;
 use Sockeon\Sockeon\Contracts\LoggerInterface;
-use Sockeon\Sockeon\Core\NamespaceManager;
+use Sockeon\Sockeon\Contracts\Namespace\NamespaceManagerInterface;
 use Sockeon\Sockeon\Core\Router;
 
 abstract class SocketController
@@ -339,9 +339,9 @@ abstract class SocketController
     /**
      * Gets the namespace manager for advanced namespace operations
      *
-     * @return NamespaceManager The namespace manager instance
+     * @return NamespaceManagerInterface The namespace manager instance
      */
-    public function getNamespaceManager(): NamespaceManager
+    public function getNamespaceManager(): NamespaceManagerInterface
     {
         return $this->server->getNamespaceManager();
     }

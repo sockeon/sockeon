@@ -1,7 +1,7 @@
 {
     "name": "sockeon/sockeon",
     "description": "Framework-agnostic PHP WebSocket and HTTP server library with attribute-based routing and support for namespaces and rooms.",
-    "type": "composer-plugin",
+    "type": "library",
     "license": "MIT",
     "autoload": {
         "psr-4": {
@@ -13,9 +13,6 @@
             "Tests\\": "tests/"
         }
     },
-    "bin": [
-        "bin/sockeon-setup"
-    ],
     "authors": [
         {
             "name": "xentixar",
@@ -23,10 +20,9 @@
         }
     ],
     "require": {
-        "php": ">=8.1",
+        "php": "^8.3",
         "ext-openssl": "*",
-        "ext-sockets": "*",
-        "composer-plugin-api": "^2.3"
+        "ext-sockets": "*"
     },
     "minimum-stability": "dev",
     "prefer-stable": true,
@@ -43,16 +39,20 @@
         "framework-agnostic"
     ],
     "require-dev": {
-        "pestphp/pest": "^2.0",
+        "pestphp/pest": "^3.0",
         "phpstan/phpstan": "^1.10",
         "friendsofphp/php-cs-fixer": "^3.0"
     },
+    "suggest": {
+        "ext-openswoole": "Required for engine=swoole high-concurrency mode",
+        "ext-redis": "Required for scale.publisher=redis or scale.registry=redis multi-node mode"
+    },
     "config": {
+        "platform": {
+            "php": "8.3.0"
+        },
         "allow-plugins": {
             "pestphp/pest-plugin": true
         }
-    },
-    "extra": {
-        "class": "Sockeon\\Sockeon\\Composer\\SockeonInstallerPlugin"
     }
 }

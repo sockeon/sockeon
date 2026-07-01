@@ -16,19 +16,17 @@ trait HandlesSendBroadcast
      */
     public function send(string $clientId, string $event, array $data): void
     {
-        if (isset($this->clients[$clientId]) && ($this->clientTypes[$clientId] ?? '') === 'ws' && is_resource($this->clients[$clientId])) {
-            try {
-                $frame = $this->wsHandler->prepareMessage($event, $data);
-                $result = @fwrite($this->clients[$clientId], $frame);
+        if (!$this->isWebSocketClient($clientId)) {
+            return;
+        }
 
-                if ($result === false) {
-                    // Connection lost, clean up
-                    $this->disconnectClient($clientId);
-                }
-            } catch (Throwable $e) {
-                // Handle any errors and disconnect client
+        try {
+            $payload = $this->buildEventPayload($event, $data);
+            if (!$this->engine->send($clientId, $payload)) {
                 $this->disconnectClient($clientId);
             }
+        } catch (Throwable $e) {
+            $this->disconnectClient($clientId);
         }
     }
 
@@ -41,19 +39,17 @@ trait HandlesSendBroadcast
      */
     public function sendToClient(string $clientId, string $message): void
     {
-        if (isset($this->clients[$clientId]) && ($this->clientTypes[$clientId] ?? '') === 'ws' && is_resource($this->clients[$clientId])) {
-            try {
-                $frame = $this->wsHandler->encodeWebSocketFrame($message, 1);
-                $result = @fwrite($this->clients[$clientId], $frame);
+        if (!$this->isWebSocketClient($clientId)) {
+            return;
+        }
 
-                if ($result === false) {
-                    // Connection lost, clean up
-                    $this->disconnectClient($clientId);
-                }
-            } catch (Throwable $e) {
-                // Handle any errors and disconnect client
+        try {
+            $payload = $this->buildWebSocketOutboundPayload($message);
+            if (!$this->engine->send($clientId, $payload)) {
                 $this->disconnectClient($clientId);
             }
+        } catch (Throwable $e) {
+            $this->disconnectClient($clientId);
         }
     }
 
@@ -68,35 +64,39 @@ trait HandlesSendBroadcast
      */
     public function broadcast(string $event, array $data, ?string $namespace = null, ?string $room = null): void
     {
-        $frame = $this->wsHandler->prepareMessage($event, $data);
+        $this->publisher->broadcast($event, $data, $namespace, $room);
+    }
 
-        if ($room !== null && $namespace !== null) {
-            $clients = $this->namespaceManager->getClientsInRoom($room, $namespace);
-        } elseif ($namespace !== null) {
-            $clients = $this->namespaceManager->getClientsInNamespace($namespace);
-        } else {
-            $clients = array_keys($this->clients);
-        }
+    public function isWebSocketClientForBroadcast(string $clientId): bool
+    {
+        return $this->isWebSocketClient($clientId);
+    }
 
-        $disconnectedClients = [];
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function buildEventPayloadForBroadcast(string $event, array $data): string
+    {
+        return $this->buildEventPayload($event, $data);
+    }
 
-        foreach ($clients as $clientId) {
-            if (isset($this->clients[$clientId]) && ($this->clientTypes[$clientId] ?? '') === 'ws' && is_resource($this->clients[$clientId])) {
-                try {
-                    $result = @fwrite($this->clients[$clientId], $frame);
+    protected function isWebSocketClient(string $clientId): bool
+    {
+        return $this->isClientConnected($clientId) && $this->getClientType($clientId) === 'ws';
+    }
 
-                    if ($result === false) {
-                        $disconnectedClients[] = $clientId;
-                    }
-                } catch (Throwable $e) {
-                    $disconnectedClients[] = $clientId;
-                }
-            }
-        }
+    /**
+     * @param array<string, mixed> $data
+     */
+    protected function buildEventPayload(string $event, array $data): string
+    {
+        return $this->buildWebSocketOutboundPayload($this->wsHandler->encodeEventPayload($event, $data));
+    }
 
-        // Clean up disconnected clients after broadcast
-        foreach ($disconnectedClients as $clientId) {
-            $this->disconnectClient($clientId);
-        }
+    protected function buildWebSocketOutboundPayload(string $jsonPayload): string
+    {
+        return $this->engine->framesOutboundWebSocket()
+            ? $this->wsHandler->encodeWebSocketFrame($jsonPayload)
+            : $jsonPayload;
     }
 }
