@@ -22,7 +22,7 @@ composer require sockeon/sockeon
 
 ## Documentation
 
-For complete documentation, visit [https://sockeon.com](https://sockeon.com)
+For complete documentation, visit [https://sockeon.github.io](https://sockeon.github.io)
 
 ## Security Vulnerabilities
 
