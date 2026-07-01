@@ -4,5 +4,4 @@ composer.lock
 .vscode
 examples
 docs
-mcp
 .php-cs-fixer.cache
