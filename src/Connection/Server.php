@@ -2,10 +2,11 @@
 
 namespace Sockeon\Sockeon\Connection;
 
-use RuntimeException;
 use Sockeon\Sockeon\Config\RateLimitConfig;
 use Sockeon\Sockeon\Config\ServerConfig;
+use Sockeon\Sockeon\Contracts\Engine\EngineInterface;
 use Sockeon\Sockeon\Contracts\LoggerInterface;
+use Sockeon\Sockeon\Engine\StreamSelectEngine;
 use Sockeon\Sockeon\Core\Middleware;
 use Sockeon\Sockeon\Core\NamespaceManager;
 use Sockeon\Sockeon\Core\Router;
@@ -41,8 +42,7 @@ class Server
 
     protected int $port;
 
-    /** @var resource|false */
-    protected $socket;
+    protected EngineInterface $engine;
 
     /** @var array<string, resource> */
     protected array $clients = [];
@@ -86,16 +86,47 @@ class Server
      */
     protected ?float $startTime = null;
 
-    public function __construct(ServerConfig $config)
+    public function __construct(ServerConfig $config, ?EngineInterface $engine = null)
     {
         $this->applyServerConfig($config);
         $this->initializeCoreComponents($config);
+        $this->engine = $engine ?? new StreamSelectEngine();
+        $this->engine->setServer($this);
     }
 
     public function run(): void
     {
-        $this->startSocket();
-        $this->loop();
+        $this->engine->start();
+    }
+
+    public function getEngine(): EngineInterface
+    {
+        return $this->engine;
+    }
+
+    public function getHost(): string
+    {
+        return $this->host;
+    }
+
+    public function getPort(): int
+    {
+        return $this->port;
+    }
+
+    public function getLogger(): LoggerInterface
+    {
+        return $this->logger;
+    }
+
+    /**
+     * @return resource|null
+     */
+    public function getClientResource(string $clientId)
+    {
+        $client = $this->clients[$clientId] ?? null;
+
+        return is_resource($client) ? $client : null;
     }
 
     /**
