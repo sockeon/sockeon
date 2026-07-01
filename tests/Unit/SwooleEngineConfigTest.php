@@ -43,6 +43,6 @@ test('engine factory throws when swoole extension is missing', function () {
 
     $config = new ServerConfig(['engine' => 'swoole']);
 
-    expect(fn () => EngineFactory::create($config))
+    expect(fn() => EngineFactory::create($config))
         ->toThrow(RuntimeException::class, 'Swoole extension is required');
 });

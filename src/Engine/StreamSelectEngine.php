@@ -117,7 +117,7 @@ class StreamSelectEngine implements EngineInterface
                 /** @var array<resource> $readSockets */
                 $readSockets = array_filter(
                     $this->server->getClients(),
-                    fn ($client) => is_resource($client)
+                    fn($client) => is_resource($client)
                 );
                 $readSockets[] = $this->socket;
                 /** @var array<resource> $read */

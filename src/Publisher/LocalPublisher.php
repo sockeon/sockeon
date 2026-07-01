@@ -8,9 +8,7 @@ use Throwable;
 
 class LocalPublisher implements PublisherInterface
 {
-    public function __construct(private Server $server)
-    {
-    }
+    public function __construct(private Server $server) {}
 
     /**
      * @param array<string, mixed> $data
@@ -40,9 +38,7 @@ class LocalPublisher implements PublisherInterface
         }
     }
 
-    public function start(): void
-    {
-    }
+    public function start(): void {}
 
     /**
      * @return list<string>

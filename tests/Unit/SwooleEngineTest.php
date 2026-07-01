@@ -14,7 +14,7 @@ test('swoole engine factory requires extension', function () {
         return;
     }
 
-    expect(fn () => EngineFactory::create(new ServerConfig(['engine' => 'swoole'])))
+    expect(fn() => EngineFactory::create(new ServerConfig(['engine' => 'swoole'])))
         ->toThrow(RuntimeException::class, 'Swoole extension is required');
 });
 
