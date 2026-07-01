@@ -31,5 +31,5 @@ test: ## Run all tests and checks
 	@echo "Running Pest tests..."
 	@make pest
 
-clean: ## Clean vendor directory and lock file
-	rm -rf vendor composer.lock
+clean: ## Clean vendor directory
+	rm -rf vendor
