@@ -16,9 +16,11 @@ class SwooleEngineConfig
 
     protected ?string $memoryLimit = null;
 
-    protected int $socketBufferSize = 131072;
+    protected int $socketBufferSize;
 
-    protected int $bufferOutputSize = 131072;
+    protected int $bufferOutputSize;
+
+    protected int $backlog;
 
     /**
      * @param array<string, mixed> $config
@@ -37,6 +39,18 @@ class SwooleEngineConfig
             $this->maxConnection = (int) $config['max_connection'];
         }
 
+        $this->socketBufferSize = isset($config['socket_buffer_size']) && is_numeric($config['socket_buffer_size'])
+            ? max(8192, (int) $config['socket_buffer_size'])
+            : $this->defaultBufferSize($this->maxConnection);
+
+        $this->bufferOutputSize = isset($config['buffer_output_size']) && is_numeric($config['buffer_output_size'])
+            ? max(8192, (int) $config['buffer_output_size'])
+            : $this->socketBufferSize;
+
+        $this->backlog = isset($config['backlog']) && is_numeric($config['backlog'])
+            ? max(128, (int) $config['backlog'])
+            : min(8192, max(1024, (int) ($this->maxConnection / 2)));
+
         if (isset($config['client_table_size']) && is_numeric($config['client_table_size'])) {
             $this->clientTableSize = (int) $config['client_table_size'];
         } else {
@@ -51,14 +65,20 @@ class SwooleEngineConfig
         if (isset($config['memory_limit']) && is_string($config['memory_limit']) && $config['memory_limit'] !== '') {
             $this->memoryLimit = $config['memory_limit'];
         }
+    }
 
-        if (isset($config['socket_buffer_size']) && is_numeric($config['socket_buffer_size'])) {
-            $this->socketBufferSize = max(8192, (int) $config['socket_buffer_size']);
+    private function defaultBufferSize(int $maxConnection): int
+    {
+        // ponytail: 128KB × 2 × 10k ≈ 2.5GB kernel buffer budget; 32KB saves ~1.9GB
+        if ($maxConnection >= 10_000) {
+            return 32768;
         }
 
-        if (isset($config['buffer_output_size']) && is_numeric($config['buffer_output_size'])) {
-            $this->bufferOutputSize = max(8192, (int) $config['buffer_output_size']);
+        if ($maxConnection >= 5_000) {
+            return 65536;
         }
+
+        return 131072;
     }
 
     public function getWorkerNum(): int
@@ -100,8 +120,12 @@ class SwooleEngineConfig
             return $this->memoryLimit;
         }
 
-        // ponytail: Laravel boot + swoole reactor at 10k needs ≥1G; 512M OOMs at start()
+        // ponytail: Laravel + 10k live sockets needs headroom; 512M/1G OOM under load
         if ($this->maxConnection >= 10_000) {
+            return '2G';
+        }
+
+        if ($this->maxConnection >= 5_000) {
             return '1G';
         }
 
@@ -118,5 +142,10 @@ class SwooleEngineConfig
     public function getBufferOutputSize(): int
     {
         return $this->bufferOutputSize;
+    }
+
+    public function getBacklog(): int
+    {
+        return $this->backlog;
     }
 }

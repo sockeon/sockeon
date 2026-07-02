@@ -11,10 +11,10 @@ use Throwable;
 trait HandlesClients
 {
     /**
-     * Connection pool for resource optimization
-     * @var ConnectionPool
+     * Connection pool for resource optimization (stream_select only)
+     * @var ConnectionPool|null
      */
-    protected ConnectionPool $connectionPool;
+    protected ?ConnectionPool $connectionPool = null;
 
     /**
      * Async task queue for heavy operations
@@ -30,7 +30,10 @@ trait HandlesClients
 
     public function bootstrapEngineRuntime(): void
     {
-        $this->connectionPool = new ConnectionPool();
+        if ($this->engine->getName() !== 'swoole') {
+            $this->connectionPool = new ConnectionPool();
+        }
+
         $this->taskQueue = new AsyncTaskQueue();
         $this->performanceMonitor = new PerformanceMonitor();
         $this->registerTaskProcessors();
@@ -64,7 +67,7 @@ trait HandlesClients
         if (($now - $lastBufferCleanup) > 30) {
             $this->cleanupExpiredBuffers();
             $this->cleanupDeadConnections();
-            $this->connectionPool->cleanup();
+            $this->connectionPool?->cleanup();
             $lastBufferCleanup = $now;
 
             if (function_exists('gc_collect_cycles')) {

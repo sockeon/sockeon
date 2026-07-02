@@ -20,7 +20,9 @@ class RedisNamespaceManager implements NamespaceManagerInterface
 
     public function joinNamespace(string $clientId, string $namespace = '/'): void
     {
-        $this->leaveNamespace($clientId);
+        if ($this->redis->exists($this->clientNamespaceKey($clientId)) > 0) {
+            $this->leaveNamespace($clientId);
+        }
 
         $this->redis->sAdd($this->namespaceKey($namespace), $this->memberKey($clientId));
         $this->redis->set($this->clientNamespaceKey($clientId), $namespace);

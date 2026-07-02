@@ -20,12 +20,7 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
     {
         $this->clientIdCounter++;
 
-        return sprintf(
-            'sockeon_%s_%d_%s',
-            base_convert((string) (int) floor(microtime(true) * 1000), 10, 36),
-            $this->clientIdCounter,
-            bin2hex(random_bytes(4))
-        );
+        return sprintf('c_%d_%d', (int) (microtime(true) * 1000), $this->clientIdCounter);
     }
 
     public function registerConnection(string $clientId, int $fd, string $type, int $workerId): bool
@@ -138,7 +133,29 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
      */
     public function ids(): array
     {
-        return array_keys($this->all());
+        $ids = [];
+
+        foreach ($this->tables->clients as $clientId => $row) {
+            if (is_string($clientId) && is_array($row)) {
+                $ids[] = $clientId;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param callable(string): void $callback
+     */
+    public function eachWebSocketClient(callable $callback): void
+    {
+        foreach ($this->tables->clients as $clientId => $row) {
+            if (!is_string($clientId) || !is_array($row) || ($row['type'] ?? '') !== 'ws') {
+                continue;
+            }
+
+            $callback($clientId);
+        }
     }
 
     public function count(): int
