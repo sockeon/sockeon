@@ -11,10 +11,10 @@ use Throwable;
 trait HandlesClients
 {
     /**
-     * Connection pool for resource optimization
-     * @var ConnectionPool
+     * Connection pool for resource optimization (stream_select only)
+     * @var ConnectionPool|null
      */
-    protected ConnectionPool $connectionPool;
+    protected ?ConnectionPool $connectionPool = null;
 
     /**
      * Async task queue for heavy operations
@@ -30,12 +30,14 @@ trait HandlesClients
 
     public function bootstrapEngineRuntime(): void
     {
-        $this->connectionPool = new ConnectionPool();
+        if ($this->engine->getName() !== 'swoole') {
+            $this->connectionPool = new ConnectionPool();
+        }
+
         $this->taskQueue = new AsyncTaskQueue();
         $this->performanceMonitor = new PerformanceMonitor();
         $this->registerTaskProcessors();
         $this->startTime = microtime(true);
-        $this->publisher->start();
     }
 
     public function runEngineLoopHooks(): void
@@ -65,7 +67,7 @@ trait HandlesClients
         if (($now - $lastBufferCleanup) > 30) {
             $this->cleanupExpiredBuffers();
             $this->cleanupDeadConnections();
-            $this->connectionPool->cleanup();
+            $this->connectionPool?->cleanup();
             $lastBufferCleanup = $now;
 
             if (function_exists('gc_collect_cycles')) {
@@ -120,7 +122,7 @@ trait HandlesClients
             $this->connectionsPerIp[$clientIp] = ($this->connectionsPerIp[$clientIp] ?? 0) + 1;
         }
 
-        $pooledConnection = $this->connectionPool->acquireConnection('unknown', $clientId, $client);
+        $pooledConnection = $this->connectionPool?->acquireConnection('unknown', $clientId, $client) ?? [];
         $reuseCount = isset($pooledConnection['reuse_count']) && is_int($pooledConnection['reuse_count']) ? $pooledConnection['reuse_count'] : 0;
         if ($reuseCount > 0) {
             $this->logger->debug("[Sockeon Connection] Reusing pooled connection for client: $clientId (reused $reuseCount times)");
@@ -176,9 +178,7 @@ trait HandlesClients
             unset($this->clients[$clientId], $this->clientTypes[$clientId]);
             unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
 
-            if (isset($this->clientData[$clientId])) {
-                unset($this->clientData[$clientId]);
-            }
+            $this->clearClientData($clientId);
 
             if ($resourceId !== null) {
                 unset($this->resourceToClientId[$resourceId]);
@@ -304,9 +304,7 @@ trait HandlesClients
         unset($this->clients[$clientId], $this->clientTypes[$clientId]);
         unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
 
-        if (isset($this->clientData[$clientId])) {
-            unset($this->clientData[$clientId]);
-        }
+        $this->clearClientData($clientId);
 
         if ($resourceId !== null) {
             unset($this->resourceToClientId[$resourceId]);
@@ -453,7 +451,7 @@ trait HandlesClients
 
                 if ($isResource) {
                     if (!@feof($client)) {
-                        $this->connectionPool->releaseConnection($clientId);
+                        $this->connectionPool?->releaseConnection($clientId);
                     } else {
                         @fclose($client);
                     }
@@ -468,9 +466,7 @@ trait HandlesClients
 
                 unset($this->clients[$clientId], $this->clientTypes[$clientId]);
 
-                if (isset($this->clientData[$clientId])) {
-                    unset($this->clientData[$clientId]);
-                }
+                $this->clearClientData($clientId);
 
                 unset($this->clientBuffers[$clientId], $this->clientBufferTimestamps[$clientId]);
 
@@ -491,16 +487,35 @@ trait HandlesClients
 
     public function setClientData(string $clientId, string $key, mixed $value): void
     {
+        if ($this->redisClientDataStore !== null) {
+            $this->redisClientDataStore->set($clientId, $key, $value);
+
+            return;
+        }
+
         $this->clientData[$clientId][$key] = $value;
     }
 
     public function getClientData(string $clientId, ?string $key = null): mixed
     {
-        if (!isset($this->clientData[$clientId])) {
-            return null;
+        if ($this->redisClientDataStore !== null) {
+            return $this->redisClientDataStore->get($clientId, $key);
         }
 
-        return $key === null ? $this->clientData[$clientId] : ($this->clientData[$clientId][$key] ?? null);
+        if ($key === null) {
+            return $this->clientData[$clientId] ?? null;
+        }
+
+        return $this->clientData[$clientId][$key] ?? null;
+    }
+
+    protected function clearClientData(string $clientId): void
+    {
+        unset($this->clientData[$clientId]);
+
+        if ($this->redisClientDataStore !== null) {
+            $this->redisClientDataStore->delete($clientId);
+        }
     }
 
     /**
@@ -683,7 +698,7 @@ trait HandlesClients
     {
         return [
             'performance' => $this->performanceMonitor->getMetrics(),
-            'connection_pool' => $this->connectionPool->getStats(),
+            'connection_pool' => $this->connectionPool?->getStats() ?? [],
             'task_queue' => $this->taskQueue->getStats(),
             'server_info' => [
                 'uptime' => $this->performanceMonitor->getFormattedUptime(),

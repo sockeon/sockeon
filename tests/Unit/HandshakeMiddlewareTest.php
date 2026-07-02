@@ -33,6 +33,26 @@ test('handshake request parses correctly', function () {
         ->and($request->isValidWebSocketRequest())->toBeTrue();
 });
 
+test('handshake request from swoole merges query_string into uri', function () {
+    $request = (object) [
+        'server' => [
+            'request_uri' => '/',
+            'query_string' => 'auth_token=abc123&city=pokhara',
+        ],
+        'header' => [
+            'Upgrade' => 'websocket',
+            'Connection' => 'Upgrade',
+            'Sec-WebSocket-Key' => 'dGhlIHNhbXBsZSBub25jZQ==',
+        ],
+    ];
+
+    $handshake = HandshakeRequest::fromSwooleRequest($request);
+
+    expect($handshake->getPath())->toBe('/')
+        ->and($handshake->getQueryParam('auth_token'))->toBe('abc123')
+        ->and($handshake->getQueryParam('city'))->toBe('pokhara');
+});
+
 class TestHandshakeMiddleware implements HandshakeMiddleware
 {
     public function handle(string $clientId, HandshakeRequest $request, callable $next, Server $server): bool|array

@@ -62,10 +62,12 @@ class HandshakeRequest
      *
      * @param string $rawRequest The raw HTTP handshake request
      */
-    public function __construct(string $rawRequest)
+    public function __construct(string $rawRequest = '')
     {
         $this->rawRequest = $rawRequest;
-        $this->parseRequest();
+        if ($rawRequest !== '') {
+            $this->parseRequest();
+        }
     }
 
     /**
@@ -73,22 +75,44 @@ class HandshakeRequest
      */
     public static function fromSwooleRequest(object $request): self
     {
+        $instance = new self();
+
         $uri = '/';
         if (isset($request->server['request_uri']) && is_string($request->server['request_uri'])) {
             $uri = $request->server['request_uri'];
         }
 
-        $lines = ["GET {$uri} HTTP/1.1"];
+        if (
+            isset($request->server['query_string'])
+            && is_string($request->server['query_string'])
+            && $request->server['query_string'] !== ''
+            && !str_contains($uri, '?')
+        ) {
+            $uri .= '?' . $request->server['query_string'];
+        }
+
+        $instance->uri = $uri;
+        $instance->parseUri();
 
         if (isset($request->header) && is_array($request->header)) {
             foreach ($request->header as $name => $value) {
-                if (is_string($name) && (is_string($value) || is_numeric($value))) {
-                    $lines[] = $name . ': ' . (string) $value;
+                if (!is_string($name) || (!is_string($value) && !is_numeric($value))) {
+                    continue;
+                }
+
+                $value = (string) $value;
+                $instance->headers[$name] = $value;
+
+                $lower = strtolower($name);
+                if ($lower === 'origin') {
+                    $instance->origin = $value;
+                } elseif ($lower === 'sec-websocket-key') {
+                    $instance->webSocketKey = $value;
                 }
             }
         }
 
-        return new self(implode("\r\n", $lines) . "\r\n\r\n");
+        return $instance;
     }
 
     /**

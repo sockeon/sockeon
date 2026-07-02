@@ -7,6 +7,7 @@ use Sockeon\Sockeon\Config\SwooleEngineConfig;
 use Sockeon\Sockeon\Connection\Server;
 use Sockeon\Sockeon\Contracts\Engine\EngineInterface;
 use Sockeon\Sockeon\Core\Config;
+use Sockeon\Sockeon\Publisher\RedisPublisher;
 use Sockeon\Sockeon\Registry\SwooleTableClientRegistry;
 use Sockeon\Sockeon\WebSocket\HandshakeRequest;
 use Throwable;
@@ -17,27 +18,35 @@ class SwooleEngine implements EngineInterface
 
     private SwooleEngineConfig $config;
 
-    private SwooleEngineTables $tables;
+    private ?SwooleEngineTables $tables = null;
 
-    private SwooleTableClientRegistry $clientRegistry;
+    private ?SwooleTableClientRegistry $clientRegistry = null;
 
     private ?\Swoole\WebSocket\Server $swooleServer = null;
-
-    /**
-     * @var array<int, string>
-     */
-    private array $pendingClientIds = [];
 
     public function __construct(?SwooleEngineConfig $config = null)
     {
         $this->config = $config ?? new SwooleEngineConfig();
-        $this->tables = SwooleEngineTables::create($this->config);
-        $this->clientRegistry = new SwooleTableClientRegistry($this->tables);
+    }
+
+    private function ensureTables(): void
+    {
+        if (!isset($this->tables)) {
+            $this->tables = SwooleEngineTables::create($this->config);
+            $this->clientRegistry = new SwooleTableClientRegistry($this->tables);
+        }
+    }
+
+    private function registry(): SwooleTableClientRegistry
+    {
+        $this->ensureTables();
+
+        return $this->clientRegistry ?? throw new RuntimeException('Client registry not initialized');
     }
 
     public function getClientRegistry(): SwooleTableClientRegistry
     {
-        return $this->clientRegistry;
+        return $this->registry();
     }
 
     public function setServer(Server $server): void
@@ -57,14 +66,17 @@ class SwooleEngine implements EngineInterface
 
     public function start(): void
     {
+        $this->applyMemoryLimit();
+
         if (!class_exists(\Swoole\WebSocket\Server::class)) {
             throw new RuntimeException(
                 'The Swoole extension is required for the swoole engine. Install ext-swoole or ext-openswoole.'
             );
         }
 
+        $this->ensureTables();
         $this->server->bootstrapEngineRuntime();
-        $this->server->getLogger()->info('[Sockeon Server] Starting Swoole engine...');
+        $this->server->getLogger()->debug('[Sockeon Server] Starting Swoole engine...');
 
         $host = $this->server->getHost();
         $port = $this->server->getPort();
@@ -82,12 +94,17 @@ class SwooleEngine implements EngineInterface
             'heartbeat_check_interval' => $survivability->getHeartbeatCheckInterval(),
             'enable_coroutine' => true,
             'package_max_length' => $this->server->getMaxMessageSize(),
+            'socket_buffer_size' => $this->config->getSocketBufferSize(),
+            'buffer_output_size' => $this->config->getBufferOutputSize(),
+            'open_tcp_nodelay' => true,
+            'backlog' => $this->config->getBacklog(),
+            'max_wait_time' => 60,
             'open_http_protocol' => true,
             'open_websocket_protocol' => true,
         ]);
 
-        $server->on('Open', function (\Swoole\WebSocket\Server $server, \Swoole\Http\Request $request): void {
-            $this->handleOpen($server, $request);
+        $server->on('handshake', function (\Swoole\Http\Request $request, \Swoole\Http\Response $response) use ($server): bool {
+            return $this->handleHandshake($server, $request, $response);
         });
 
         $server->on('Message', function (\Swoole\WebSocket\Server $server, \Swoole\WebSocket\Frame $frame): void {
@@ -103,10 +120,17 @@ class SwooleEngine implements EngineInterface
         });
 
         $server->on('WorkerStart', function (\Swoole\Server $server, int $workerId): void {
+            $this->applyMemoryLimit();
+            $this->sweepStaleRegistryEntries($server);
             $this->startWorkerTimers($workerId);
         });
 
-        $this->server->getLogger()->info("[Sockeon Server] Listening on swoole://{$host}:{$port}");
+        $publisher = $this->server->getPublisher();
+        if ($publisher instanceof RedisPublisher) {
+            $publisher->registerSwooleSubscriber($server);
+        }
+
+        $this->server->getLogger()->debug("[Sockeon Server] Listening on {$host}:{$port}");
         $server->start();
     }
 
@@ -116,7 +140,7 @@ class SwooleEngine implements EngineInterface
             return false;
         }
 
-        $fd = $this->clientRegistry->getFd($clientId);
+        $fd = $this->registry()->getFd($clientId);
         if ($fd === null) {
             return false;
         }
@@ -137,7 +161,7 @@ class SwooleEngine implements EngineInterface
             return;
         }
 
-        $fd ??= $this->clientRegistry->getFd($clientId);
+        $fd ??= $this->registry()->getFd($clientId);
         if ($fd === null) {
             return;
         }
@@ -149,20 +173,47 @@ class SwooleEngine implements EngineInterface
 
     public function forgetClient(string $clientId): void
     {
-        $fd = $this->clientRegistry->getFd($clientId);
-        if ($fd !== null) {
-            unset($this->pendingClientIds[$fd]);
-        }
-
-        $this->clientRegistry->remove($clientId);
+        $this->registry()->remove($clientId);
     }
 
-    protected function validateIncomingConnection(
-        string $clientId,
-        HandshakeRequest $handshakeRequest,
+    protected function handleHandshake(
         \Swoole\WebSocket\Server $server,
-        int $fd,
+        \Swoole\Http\Request $request,
+        \Swoole\Http\Response $response,
     ): bool {
+        $fd = $request->fd;
+
+        $maxConnections = min($this->config->getMaxConnection(), $this->server->getMaxConnections());
+        if (!$this->registry()->hasTableCapacity() || $this->registry()->count() >= $maxConnections) {
+            $this->server->getLogger()->warning('[Sockeon Connection] Connection limit reached, rejecting client', [
+                'max_connections' => $maxConnections,
+            ]);
+            $this->rejectHandshake($server, $response, $fd, [
+                'status' => 503,
+                'statusText' => 'Service Unavailable',
+                'body' => 'Connection limit reached',
+            ]);
+
+            return false;
+        }
+
+        $clientIp = $this->getClientIpFromRequest($request);
+        if ($clientIp !== null && !$this->server->isConnectionAllowedForIp($clientIp)) {
+            $this->server->getLogger()->warning('[Sockeon Connection] Connection rate limit exceeded, rejecting client', [
+                'ip' => $clientIp,
+            ]);
+            $this->rejectHandshake($server, $response, $fd, [
+                'status' => 429,
+                'statusText' => 'Too Many Requests',
+                'body' => 'Connection rate limit exceeded',
+            ]);
+
+            return false;
+        }
+
+        $clientId = $this->registry()->generateClientId();
+        $handshakeRequest = HandshakeRequest::fromSwooleRequest($request);
+
         try {
             /** @var bool|array<string, mixed> $result */
             $result = $this->server->getMiddleware()->runHandshakeStack(
@@ -174,69 +225,129 @@ class SwooleEngine implements EngineInterface
                 $this->server
             );
 
-            if ($result === false || is_array($result)) {
-                $server->close($fd);
+            if ($result === false) {
+                $this->rejectHandshake($server, $response, $fd, []);
 
                 return false;
             }
 
-            return true;
+            if (is_array($result)) {
+                $this->rejectHandshake($server, $response, $fd, $result);
+
+                return false;
+            }
         } catch (Throwable $e) {
             $this->server->getLogger()->exception($e, ['context' => 'Swoole handshake validation']);
+            $this->rejectHandshake($server, $response, $fd, [
+                'status' => 500,
+                'statusText' => 'Internal Server Error',
+                'body' => 'An error occurred while processing your request.',
+            ]);
+
+            return false;
+        }
+
+        if (!$this->completeSwooleHandshake($handshakeRequest, $response)) {
             $server->close($fd);
 
             return false;
         }
+
+        $this->completeWebSocketOpen($server, $request, $clientId, $fd, $clientIp);
+
+        return true;
     }
 
-    protected function handleOpen(\Swoole\WebSocket\Server $server, \Swoole\Http\Request $request): void
+    /**
+     * @param array<string, mixed> $responseData
+     */
+    protected function rejectHandshake(
+        \Swoole\WebSocket\Server $server,
+        \Swoole\Http\Response $response,
+        int $fd,
+        array $responseData,
+    ): void {
+        $statusCode = is_int($responseData['status'] ?? null) ? $responseData['status'] : 403;
+        $body = is_string($responseData['body'] ?? null) ? $responseData['body'] : 'Access denied';
+        $headers = is_array($responseData['headers'] ?? null) ? $responseData['headers'] : [];
+
+        $response->status($statusCode);
+        $response->header('Content-Type', 'text/plain');
+
+        foreach ($headers as $name => $value) {
+            if (is_string($name) && (is_string($value) || is_numeric($value))) {
+                $response->header($name, (string) $value);
+            }
+        }
+
+        $response->end($body);
+        $server->close($fd);
+    }
+
+    protected function completeSwooleHandshake(HandshakeRequest $handshakeRequest, \Swoole\Http\Response $response): bool
     {
-        $fd = $request->fd;
-        $clientId = $this->clientRegistry->generateClientId();
-
-        if (!$this->validateIncomingConnection($clientId, HandshakeRequest::fromSwooleRequest($request), $server, $fd)) {
-            return;
+        $webSocketKey = $handshakeRequest->getWebSocketKey();
+        if ($webSocketKey === null) {
+            return false;
         }
 
-        $maxConnections = min($this->config->getMaxConnection(), $this->server->getMaxConnections());
-        if ($this->clientRegistry->count() >= $maxConnections) {
-            $this->server->getLogger()->warning('[Sockeon Connection] Connection limit reached, rejecting client', [
-                'max_connections' => $maxConnections,
-            ]);
-            $server->close($fd);
+        $acceptKey = base64_encode(sha1($webSocketKey . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
 
-            return;
+        $response->header('Upgrade', 'websocket');
+        $response->header('Connection', 'Upgrade');
+        $response->header('Sec-WebSocket-Accept', $acceptKey);
+        $response->header('Sec-WebSocket-Version', '13');
+
+        $origin = $handshakeRequest->getOrigin();
+        if ($origin !== null) {
+            $response->header('Access-Control-Allow-Origin', $origin);
         }
 
-        $clientIp = $this->getClientIpFromRequest($request);
-        if ($clientIp !== null && !$this->server->isConnectionAllowedForIp($clientIp)) {
-            $this->server->getLogger()->warning('[Sockeon Connection] Connection rate limit exceeded, rejecting client', [
-                'ip' => $clientIp,
-            ]);
-            $server->close($fd);
-
-            return;
+        $protocol = $handshakeRequest->getHeader('Sec-WebSocket-Protocol');
+        if ($protocol !== null) {
+            $response->header('Sec-WebSocket-Protocol', $protocol);
         }
 
+        $response->status(101);
+        $response->end();
+
+        return true;
+    }
+
+    protected function completeWebSocketOpen(
+        \Swoole\WebSocket\Server $server,
+        \Swoole\Http\Request $request,
+        string $clientId,
+        int $fd,
+        ?string $clientIp,
+    ): void {
         $workerId = $server->worker_id ?? 0;
-        $this->clientRegistry->registerConnection($clientId, $fd, 'ws', $workerId);
+
+        if (!$this->registry()->registerConnection($clientId, $fd, 'ws', $workerId)) {
+            $this->server->getLogger()->warning('[Sockeon Connection] Client registry full, rejecting connection', [
+                'fd' => $fd,
+                'registry_count' => $this->registry()->count(),
+            ]);
+            $server->close($fd);
+
+            return;
+        }
+
         $this->server->registerSwooleClient($clientId, $fd, 'ws', $clientIp);
         $this->server->getWsHandler()->markHandshakeComplete($clientId);
 
         $this->server->getLogger()->debug("[Sockeon Connection] WebSocket client connected: $clientId (fd: $fd)");
 
-        $this->runInCoroutine(function () use ($clientId): void {
-            try {
-                $this->server->getRouter()->dispatchSpecialEvent($clientId, 'connect');
-            } catch (Throwable $e) {
-                $this->server->getLogger()->exception($e, ['clientId' => $clientId, 'context' => 'connect event']);
-            }
-        });
+        try {
+            $this->server->getRouter()->dispatchSpecialEvent($clientId, 'connect');
+        } catch (Throwable $e) {
+            $this->server->getLogger()->exception($e, ['clientId' => $clientId, 'context' => 'connect event']);
+        }
     }
 
     protected function handleMessage(\Swoole\WebSocket\Server $server, \Swoole\WebSocket\Frame $frame): void
     {
-        $clientId = $this->clientRegistry->getClientIdByResource($frame->fd);
+        $clientId = $this->registry()->getClientIdByResource($frame->fd);
         if ($clientId === null) {
             $server->close($frame->fd);
 
@@ -281,19 +392,18 @@ class SwooleEngine implements EngineInterface
 
     protected function handleClose(int $fd): void
     {
-        $clientId = $this->clientRegistry->getClientIdByResource($fd);
+        $clientId = $this->registry()->getClientIdByResource($fd);
         if ($clientId === null) {
             return;
         }
 
         $this->server->finalizeSwooleClientDisconnect($clientId);
-        $this->clientRegistry->remove($clientId);
-        unset($this->pendingClientIds[$fd]);
+        $this->registry()->remove($clientId);
     }
 
     protected function handleHttpRequest(\Swoole\Http\Request $request, \Swoole\Http\Response $response): void
     {
-        $clientId = $this->clientRegistry->generateClientId();
+        $clientId = $this->registry()->generateClientId();
 
         try {
             $this->runInCoroutine(function () use ($clientId, $request, $response): void {
@@ -303,6 +413,20 @@ class SwooleEngine implements EngineInterface
             $this->server->getLogger()->exception($e, ['clientId' => $clientId, 'context' => 'Swoole HTTP']);
             $response->status(500);
             $response->end('An error occurred while processing your request.');
+        }
+    }
+
+    protected function sweepStaleRegistryEntries(\Swoole\Server $server): void
+    {
+        $removed = $this->registry()->removeStaleConnections(
+            fn(int $fd): bool => (bool) $server->exist($fd),
+        );
+
+        if ($removed > 0) {
+            $this->server->getLogger()->warning('[Sockeon Connection] Removed stale registry entries after worker start', [
+                'removed' => $removed,
+                'registry_count' => $this->registry()->count(),
+            ]);
         }
     }
 
@@ -333,5 +457,10 @@ class SwooleEngine implements EngineInterface
         $address = $request->server['remote_addr'] ?? null;
 
         return is_string($address) && $address !== '' ? $address : null;
+    }
+
+    private function applyMemoryLimit(): void
+    {
+        ini_set('memory_limit', $this->config->getMemoryLimit());
     }
 }

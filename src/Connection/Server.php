@@ -13,6 +13,7 @@ use Sockeon\Sockeon\Contracts\Publisher\PublisherInterface;
 use Sockeon\Sockeon\Engine\EngineFactory;
 use Sockeon\Sockeon\Engine\SwooleEngine;
 use Sockeon\Sockeon\Core\Middleware;
+use Sockeon\Sockeon\Core\RedisClientDataStore;
 use Sockeon\Sockeon\Core\Router;
 use Sockeon\Sockeon\Http\Handler as HttpHandler;
 use Sockeon\Sockeon\WebSocket\Handler as WebSocketHandler;
@@ -87,6 +88,8 @@ class Server
     protected ?RateLimitConfig $rateLimitConfig = null;
 
     protected SurvivabilityConfig $survivabilityConfig;
+
+    protected ?RedisClientDataStore $redisClientDataStore = null;
 
     protected ?string $healthCheckPath = null;
 

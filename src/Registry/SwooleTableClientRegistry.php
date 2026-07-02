@@ -20,25 +20,55 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
     {
         $this->clientIdCounter++;
 
-        return sprintf(
-            'sockeon_%s_%d_%s',
-            base_convert((string) (int) floor(microtime(true) * 1000), 10, 36),
-            $this->clientIdCounter,
-            bin2hex(random_bytes(4))
-        );
+        return sprintf('c_%d_%d', (int) (microtime(true) * 1000), $this->clientIdCounter);
     }
 
-    public function registerConnection(string $clientId, int $fd, string $type, int $workerId): void
+    public function registerConnection(string $clientId, int $fd, string $type, int $workerId): bool
     {
-        $this->tables->clients->set($clientId, [
+        if (!$this->hasTableCapacity()) {
+            return false;
+        }
+
+        if (!$this->tables->clients->set($clientId, [
             'fd' => $fd,
             'type' => $type,
             'worker_id' => $workerId,
-        ]);
+        ])) {
+            return false;
+        }
 
-        $this->tables->fdMap->set((string) $fd, [
+        if (!$this->tables->fdMap->set((string) $fd, [
             'client_id' => $clientId,
-        ]);
+        ])) {
+            $this->tables->clients->del($clientId);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public function hasTableCapacity(): bool
+    {
+        return $this->tables->clients->count() < $this->tables->capacity
+            && $this->tables->fdMap->count() < $this->tables->capacity;
+    }
+
+    /**
+     * @param callable(int): bool $isAlive
+     */
+    public function removeStaleConnections(callable $isAlive): int
+    {
+        $removed = 0;
+
+        foreach ($this->all() as $clientId => $fd) {
+            if (!$isAlive($fd)) {
+                $this->remove($clientId);
+                $removed++;
+            }
+        }
+
+        return $removed;
     }
 
     /**
@@ -103,7 +133,29 @@ class SwooleTableClientRegistry implements ClientRegistryInterface
      */
     public function ids(): array
     {
-        return array_keys($this->all());
+        $ids = [];
+
+        foreach ($this->tables->clients as $clientId => $row) {
+            if (is_string($clientId) && is_array($row)) {
+                $ids[] = $clientId;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param callable(string): void $callback
+     */
+    public function eachWebSocketClient(callable $callback): void
+    {
+        foreach ($this->tables->clients as $clientId => $row) {
+            if (!is_string($clientId) || !is_array($row) || ($row['type'] ?? '') !== 'ws') {
+                continue;
+            }
+
+            $callback($clientId);
+        }
     }
 
     public function count(): int
