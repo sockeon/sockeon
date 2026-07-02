@@ -122,7 +122,7 @@ trait HandlesClients
             $this->connectionsPerIp[$clientIp] = ($this->connectionsPerIp[$clientIp] ?? 0) + 1;
         }
 
-        $pooledConnection = $this->connectionPool->acquireConnection('unknown', $clientId, $client);
+        $pooledConnection = $this->connectionPool?->acquireConnection('unknown', $clientId, $client) ?? [];
         $reuseCount = isset($pooledConnection['reuse_count']) && is_int($pooledConnection['reuse_count']) ? $pooledConnection['reuse_count'] : 0;
         if ($reuseCount > 0) {
             $this->logger->debug("[Sockeon Connection] Reusing pooled connection for client: $clientId (reused $reuseCount times)");
@@ -451,7 +451,7 @@ trait HandlesClients
 
                 if ($isResource) {
                     if (!@feof($client)) {
-                        $this->connectionPool->releaseConnection($clientId);
+                        $this->connectionPool?->releaseConnection($clientId);
                     } else {
                         @fclose($client);
                     }
@@ -698,7 +698,7 @@ trait HandlesClients
     {
         return [
             'performance' => $this->performanceMonitor->getMetrics(),
-            'connection_pool' => $this->connectionPool->getStats(),
+            'connection_pool' => $this->connectionPool?->getStats() ?? [],
             'task_queue' => $this->taskQueue->getStats(),
             'server_info' => [
                 'uptime' => $this->performanceMonitor->getFormattedUptime(),

@@ -10,7 +10,7 @@ install: ## Install composer dependencies
 	composer install
 
 phpstan: ## Run PHPStan static analysis
-	vendor/bin/phpstan analyse
+	vendor/bin/phpstan analyse --memory-limit=1024M
 
 phpcs: ## Run PHP CS Fixer in dry-run mode
 	vendor/bin/php-cs-fixer fix --dry-run --diff --verbose

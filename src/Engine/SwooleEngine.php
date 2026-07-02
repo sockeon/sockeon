@@ -37,11 +37,16 @@ class SwooleEngine implements EngineInterface
         }
     }
 
-    public function getClientRegistry(): SwooleTableClientRegistry
+    private function registry(): SwooleTableClientRegistry
     {
         $this->ensureTables();
 
-        return $this->clientRegistry;
+        return $this->clientRegistry ?? throw new RuntimeException('Client registry not initialized');
+    }
+
+    public function getClientRegistry(): SwooleTableClientRegistry
+    {
+        return $this->registry();
     }
 
     public function setServer(Server $server): void
@@ -135,7 +140,7 @@ class SwooleEngine implements EngineInterface
             return false;
         }
 
-        $fd = $this->clientRegistry->getFd($clientId);
+        $fd = $this->registry()->getFd($clientId);
         if ($fd === null) {
             return false;
         }
@@ -156,7 +161,7 @@ class SwooleEngine implements EngineInterface
             return;
         }
 
-        $fd ??= $this->clientRegistry->getFd($clientId);
+        $fd ??= $this->registry()->getFd($clientId);
         if ($fd === null) {
             return;
         }
@@ -168,7 +173,7 @@ class SwooleEngine implements EngineInterface
 
     public function forgetClient(string $clientId): void
     {
-        $this->clientRegistry->remove($clientId);
+        $this->registry()->remove($clientId);
     }
 
     protected function handleHandshake(
@@ -179,7 +184,7 @@ class SwooleEngine implements EngineInterface
         $fd = $request->fd;
 
         $maxConnections = min($this->config->getMaxConnection(), $this->server->getMaxConnections());
-        if (!$this->clientRegistry->hasTableCapacity() || $this->clientRegistry->count() >= $maxConnections) {
+        if (!$this->registry()->hasTableCapacity() || $this->registry()->count() >= $maxConnections) {
             $this->server->getLogger()->warning('[Sockeon Connection] Connection limit reached, rejecting client', [
                 'max_connections' => $maxConnections,
             ]);
@@ -206,7 +211,7 @@ class SwooleEngine implements EngineInterface
             return false;
         }
 
-        $clientId = $this->clientRegistry->generateClientId();
+        $clientId = $this->registry()->generateClientId();
         $handshakeRequest = HandshakeRequest::fromSwooleRequest($request);
 
         try {
@@ -318,10 +323,10 @@ class SwooleEngine implements EngineInterface
     ): void {
         $workerId = $server->worker_id ?? 0;
 
-        if (!$this->clientRegistry->registerConnection($clientId, $fd, 'ws', $workerId)) {
+        if (!$this->registry()->registerConnection($clientId, $fd, 'ws', $workerId)) {
             $this->server->getLogger()->warning('[Sockeon Connection] Client registry full, rejecting connection', [
                 'fd' => $fd,
-                'registry_count' => $this->clientRegistry->count(),
+                'registry_count' => $this->registry()->count(),
             ]);
             $server->close($fd);
 
@@ -342,7 +347,7 @@ class SwooleEngine implements EngineInterface
 
     protected function handleMessage(\Swoole\WebSocket\Server $server, \Swoole\WebSocket\Frame $frame): void
     {
-        $clientId = $this->clientRegistry->getClientIdByResource($frame->fd);
+        $clientId = $this->registry()->getClientIdByResource($frame->fd);
         if ($clientId === null) {
             $server->close($frame->fd);
 
@@ -387,18 +392,18 @@ class SwooleEngine implements EngineInterface
 
     protected function handleClose(int $fd): void
     {
-        $clientId = $this->clientRegistry->getClientIdByResource($fd);
+        $clientId = $this->registry()->getClientIdByResource($fd);
         if ($clientId === null) {
             return;
         }
 
         $this->server->finalizeSwooleClientDisconnect($clientId);
-        $this->clientRegistry->remove($clientId);
+        $this->registry()->remove($clientId);
     }
 
     protected function handleHttpRequest(\Swoole\Http\Request $request, \Swoole\Http\Response $response): void
     {
-        $clientId = $this->clientRegistry->generateClientId();
+        $clientId = $this->registry()->generateClientId();
 
         try {
             $this->runInCoroutine(function () use ($clientId, $request, $response): void {
@@ -413,14 +418,14 @@ class SwooleEngine implements EngineInterface
 
     protected function sweepStaleRegistryEntries(\Swoole\Server $server): void
     {
-        $removed = $this->clientRegistry->removeStaleConnections(
-            fn (int $fd): bool => $server->exist($fd) && $server->isEstablished($fd),
+        $removed = $this->registry()->removeStaleConnections(
+            fn(int $fd): bool => (bool) $server->exist($fd),
         );
 
         if ($removed > 0) {
             $this->server->getLogger()->warning('[Sockeon Connection] Removed stale registry entries after worker start', [
                 'removed' => $removed,
-                'registry_count' => $this->clientRegistry->count(),
+                'registry_count' => $this->registry()->count(),
             ]);
         }
     }

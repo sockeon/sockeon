@@ -37,7 +37,7 @@ trait HandlesRooms
     {
         $clients = $this->namespaceManager->getClientsInRoom($room, $namespace);
 
-        return array_filter($clients, fn (string $clientId): bool => $this->isClientConnected($clientId));
+        return array_filter($clients, fn(string $clientId): bool => $this->isClientConnected($clientId));
     }
 
     /**
@@ -47,6 +47,6 @@ trait HandlesRooms
     {
         $clients = $this->namespaceManager->getClientsInNamespace($namespace);
 
-        return array_filter($clients, fn (string $clientId): bool => $this->isClientConnected($clientId));
+        return array_filter($clients, fn(string $clientId): bool => $this->isClientConnected($clientId));
     }
 }

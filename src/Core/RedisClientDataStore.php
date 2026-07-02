@@ -48,7 +48,7 @@ class RedisClientDataStore
 
     public function has(string $clientId): bool
     {
-        return $this->redis->exists($this->key($clientId)) > 0;
+        return (int) $this->redis->exists($this->key($clientId)) > 0;
     }
 
     public function delete(string $clientId): void
