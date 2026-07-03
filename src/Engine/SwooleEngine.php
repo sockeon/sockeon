@@ -402,7 +402,7 @@ class SwooleEngine implements EngineInterface
     protected function sweepStaleRegistryEntries(\Swoole\Server $server): void
     {
         $removed = $this->clientRegistry->removeStaleConnections(
-            fn (int $fd): bool => $server->exist($fd) && $server->isEstablished($fd),
+            fn(int $fd): bool => (bool) $server->exist($fd),
         );
 
         if ($removed > 0) {
