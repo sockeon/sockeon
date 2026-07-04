@@ -1,0 +1,152 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Sockeon\Sockeon\Upgrade\V2ToV3Upgrader;
+
+$autoloadPaths = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php',
+];
+
+foreach ($autoloadPaths as $autoload) {
+    if (is_file($autoload)) {
+        require $autoload;
+        break;
+    }
+}
+
+if (!class_exists(V2ToV3Upgrader::class)) {
+    fwrite(STDERR, "Could not load Sockeon autoloader. Run from a project with sockeon/sockeon installed.\n");
+    exit(1);
+}
+
+$options = getopt('', ['dry-run', 'config-only', 'code-only', 'help']);
+$args = array_values(array_filter(
+    $argv,
+    static fn (string $arg): bool => !str_starts_with($arg, '-') && $arg !== ($argv[0] ?? '')
+));
+
+if (isset($options['help'])) {
+    echo <<<HELP
+Sockeon v2 → v3 upgrade script
+
+Usage:
+  sockeon-upgrade [path] [--dry-run] [--config-only] [--code-only]
+
+Options:
+  --dry-run      Show what would change without writing files
+  --config-only  Only upgrade config files (engine, survivability, rate_limit caps)
+  --code-only    Only upgrade PHP API method calls
+  --help         Show this help
+
+Examples:
+  sockeon-upgrade .
+  sockeon-upgrade app/Controllers --dry-run
+  sockeon-upgrade config/sockeon.php
+
+See: https://sockeon.github.io/v3.0/getting-started/migration-v3.html
+
+HELP;
+    exit(0);
+}
+
+$path = $args[0] ?? getcwd();
+if ($path === false || (!is_dir($path) && !is_file($path))) {
+    fwrite(STDERR, "Path not found: {$path}\n");
+    exit(1);
+}
+
+$dryRun = isset($options['dry-run']);
+$upgrader = new V2ToV3Upgrader();
+$write = !$dryRun;
+$results = [];
+
+if (is_file($path)) {
+    $content = file_get_contents($path);
+    if ($content === false) {
+        fwrite(STDERR, "Could not read: {$path}\n");
+        exit(1);
+    }
+
+    if (isset($options['config-only'])) {
+        $result = $upgrader->upgradeConfig($content, $path);
+    } elseif (isset($options['code-only'])) {
+        $result = $upgrader->upgradePhp($content, $path);
+    } else {
+        $php = $upgrader->upgradePhp($content, $path);
+        $config = $upgrader->upgradeConfig($php['content'], $path);
+        $result = [
+            'content' => $config['content'],
+            'changes' => array_values(array_unique([...$php['changes'], ...$config['changes']])),
+        ];
+    }
+
+    if ($result['changes'] !== [] && $result['content'] !== $content) {
+        if ($write) {
+            file_put_contents($path, $result['content']);
+        }
+        $results[] = ['path' => $path, 'changed' => true, 'changes' => $result['changes']];
+    }
+} else {
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS)
+    );
+
+    /** @var SplFileInfo $file */
+    foreach ($iterator as $file) {
+        if (!$file->isFile() || !str_ends_with($file->getPathname(), '.php')) {
+            continue;
+        }
+
+        $filePath = $file->getPathname();
+        if ($upgrader->shouldSkip($filePath)) {
+            continue;
+        }
+
+        $content = file_get_contents($filePath);
+        if ($content === false) {
+            continue;
+        }
+
+        if (isset($options['config-only'])) {
+            $result = $upgrader->upgradeConfig($content, $filePath);
+        } elseif (isset($options['code-only'])) {
+            $result = $upgrader->upgradePhp($content, $filePath);
+        } else {
+            $php = $upgrader->upgradePhp($content, $filePath);
+            $result = $upgrader->upgradeConfig($php['content'], $filePath);
+            $result['changes'] = array_values(array_unique([...$php['changes'], ...$result['changes']]));
+        }
+
+        if ($result['changes'] === [] || $result['content'] === $content) {
+            continue;
+        }
+
+        if ($write) {
+            file_put_contents($filePath, $result['content']);
+        }
+
+        $results[] = ['path' => $filePath, 'changed' => true, 'changes' => $result['changes']];
+    }
+}
+
+if ($results === []) {
+    echo "No changes needed.\n";
+    exit(0);
+}
+
+echo ($dryRun ? "Dry run — would update:\n" : "Updated:\n");
+foreach ($results as $result) {
+    echo "  {$result['path']}\n";
+    foreach ($result['changes'] as $change) {
+        echo "    - {$change}\n";
+    }
+}
+
+if ($dryRun) {
+    echo "\nRe-run without --dry-run to apply changes.\n";
+}
+
+exit(0);

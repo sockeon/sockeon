@@ -56,6 +56,17 @@ class RedisClientDataStore
         $this->redis->del($this->key($clientId));
     }
 
+    public function forget(string $clientId, ?string $key = null): void
+    {
+        if ($key === null) {
+            $this->delete($clientId);
+
+            return;
+        }
+
+        $this->redis->hDel($this->key($clientId), $key);
+    }
+
     private function key(string $clientId): string
     {
         return $this->config->getRedisPrefix() . 'client:' . $clientId . ':data';

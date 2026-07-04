@@ -14,7 +14,7 @@ trait HandlesSendBroadcast
      * @param array<string, mixed> $data Data to send
      * @return void
      */
-    public function send(string $clientId, string $event, array $data): void
+    public function emit(string $clientId, string $event, array $data): void
     {
         if (!$this->isWebSocketClient($clientId)) {
             return;
@@ -37,7 +37,7 @@ trait HandlesSendBroadcast
      * @param string $message Raw message data
      * @return void
      */
-    public function sendToClient(string $clientId, string $message): void
+    public function sendRaw(string $clientId, string $message): void
     {
         if (!$this->isWebSocketClient($clientId)) {
             return;

@@ -509,6 +509,26 @@ trait HandlesClients
         return $this->clientData[$clientId][$key] ?? null;
     }
 
+    public function forgetClientData(string $clientId, ?string $key = null): void
+    {
+        if ($this->redisClientDataStore !== null) {
+            $this->redisClientDataStore->forget($clientId, $key);
+
+            return;
+        }
+
+        if ($key === null) {
+            $this->clearClientData($clientId);
+
+            return;
+        }
+
+        unset($this->clientData[$clientId][$key]);
+        if (($this->clientData[$clientId] ?? []) === []) {
+            unset($this->clientData[$clientId]);
+        }
+    }
+
     protected function clearClientData(string $clientId): void
     {
         unset($this->clientData[$clientId]);

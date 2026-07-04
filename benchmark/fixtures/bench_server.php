@@ -103,7 +103,7 @@ final class BenchPresenceController extends SocketController
     public function onConnect(string $clientId): void
     {
         // ponytail: RedisNamespaceManager filters room members without client data store presence
-        $this->setClientData($clientId, 'bench', true);
+        $this->putData($clientId, 'bench', true);
     }
 }
 
