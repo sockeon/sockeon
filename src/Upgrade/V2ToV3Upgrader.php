@@ -40,7 +40,7 @@ final class V2ToV3Upgrader
         $this->changes = [];
         $original = $content;
 
-        if (!$this->looksLikeSockeonConfig($content)) {
+        if (!$this->looksLikeSockeonConfig($content, $path)) {
             return ['content' => $content, 'changes' => []];
         }
 
@@ -136,10 +136,32 @@ final class V2ToV3Upgrader
         return $results;
     }
 
-    private function looksLikeSockeonConfig(string $content): bool
+    private function looksLikeSockeonConfig(string $content, string $path = ''): bool
     {
-        return str_contains($content, 'ServerConfig')
-            || (str_contains($content, "'host'") && str_contains($content, "'port'"));
+        $normalizedPath = str_replace('\\', '/', $path);
+        if ($normalizedPath !== '' && str_ends_with($normalizedPath, 'sockeon.php')) {
+            return true;
+        }
+
+        if (str_contains($content, 'ServerConfig')) {
+            return true;
+        }
+
+        foreach ([
+            'controllers_path',
+            'maxHttpRequestsPerIp',
+            'maxMessagesPerSecond',
+            'SOCKEON_HOST',
+            'SOCKEON_PORT',
+            "'to_console'",
+            '"to_console"',
+        ] as $marker) {
+            if (str_contains($content, $marker)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function shouldSkipPath(string $path): bool

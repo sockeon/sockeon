@@ -82,6 +82,24 @@ test('upgrades sockeon config defaults', function () {
         ->toContain('maxConnectionsPerIp');
 });
 
+test('does not upgrade unrelated laravel config files', function () {
+    $source = <<<'PHP'
+        <?php
+
+        return [
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '3306'),
+            'debug' => (bool) env('APP_DEBUG', false),
+        ];
+        PHP;
+
+    $upgrader = new V2ToV3Upgrader();
+    $result = $upgrader->upgradeConfig($source, 'config/database.php');
+
+    expect($result['changes'])->toBe([]);
+    expect($result['content'])->toBe($source);
+});
+
 test('call argument parser splits nested arrays', function () {
     $args = Sockeon\Sockeon\Upgrade\CallArgumentParser::split("['a'], 'event', ['k' => 'v']");
 
