@@ -63,11 +63,16 @@ class RedisPublisher implements PublisherInterface
         $nodeId = $config->getNodeId();
         $localPublisher = $this->localPublisher;
 
-        $process = new \Swoole\Process(function (\Swoole\Process $worker) use ($config, $channel): void {
+        $process = new \Swoole\Process(function () use ($server, $config, $channel): void {
             $redis = RedisFactory::connect($config);
-            $redis->subscribe([$channel], function ($redis, $chan, $message) use ($worker): void {
-                if (is_string($message)) {
-                    $worker->write($message);
+            $redis->subscribe([$channel], function ($redis, $chan, $message) use ($server): void {
+                if (!is_string($message)) {
+                    return;
+                }
+
+                $workerNum = (int) ($server->setting['worker_num'] ?? 1);
+                for ($i = 0; $i < $workerNum; $i++) {
+                    $server->sendMessage($message, $i);
                 }
             });
         });

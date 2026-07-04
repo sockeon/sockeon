@@ -7,21 +7,23 @@ use RuntimeException;
 final class BackgroundServer
 {
     /**
-     * @param array{max_connections?: int, engine?: string} $options
+     * @param array{max_connections?: int, engine?: string, fixture?: string, profile?: string} $options
      * @return resource
      */
     public static function start(int $port, array $options = [])
     {
         $maxConnections = $options['max_connections'] ?? 10_000;
         $engine = $options['engine'] ?? 'stream_select';
-        $fixture = dirname(__DIR__) . '/fixtures/run_server.php';
+        $fixture = $options['fixture'] ?? dirname(__DIR__) . '/fixtures/run_server.php';
+        $profile = $options['profile'] ?? 'default';
         $command = sprintf(
-            '%s %s %d %d %s',
+            '%s %s %d %d %s %s',
             escapeshellarg(PHP_BINARY),
             escapeshellarg($fixture),
             $port,
             $maxConnections,
-            escapeshellarg($engine)
+            escapeshellarg($engine),
+            escapeshellarg($profile),
         );
 
         $descriptors = [
