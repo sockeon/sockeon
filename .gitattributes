@@ -16,7 +16,6 @@
 /vendor export-ignore
 /.idea export-ignore
 /.vscode export-ignore
-/bin export-ignore
 /examples export-ignore
 /docs export-ignore
 /.gitignore export-ignore
