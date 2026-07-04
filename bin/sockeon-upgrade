@@ -22,13 +22,29 @@ if (!class_exists(V2ToV3Upgrader::class)) {
     exit(1);
 }
 
-$options = getopt('', ['dry-run', 'config-only', 'code-only', 'help']);
+$flags = [
+    'dry-run' => false,
+    'config-only' => false,
+    'code-only' => false,
+    'help' => false,
+];
+
+foreach ($argv as $arg) {
+    match ($arg) {
+        '--dry-run' => $flags['dry-run'] = true,
+        '--config-only' => $flags['config-only'] = true,
+        '--code-only' => $flags['code-only'] = true,
+        '--help' => $flags['help'] = true,
+        default => null,
+    };
+}
+
 $args = array_values(array_filter(
     $argv,
     static fn (string $arg): bool => !str_starts_with($arg, '-') && $arg !== ($argv[0] ?? '')
 ));
 
-if (isset($options['help'])) {
+if ($flags['help']) {
     echo <<<HELP
 Sockeon v2 → v3 upgrade script
 
@@ -58,7 +74,7 @@ if ($path === false || (!is_dir($path) && !is_file($path))) {
     exit(1);
 }
 
-$dryRun = isset($options['dry-run']);
+$dryRun = $flags['dry-run'];
 $upgrader = new V2ToV3Upgrader();
 $write = !$dryRun;
 $results = [];
@@ -70,9 +86,9 @@ if (is_file($path)) {
         exit(1);
     }
 
-    if (isset($options['config-only'])) {
+    if ($flags['config-only']) {
         $result = $upgrader->upgradeConfig($content, $path);
-    } elseif (isset($options['code-only'])) {
+    } elseif ($flags['code-only']) {
         $result = $upgrader->upgradePhp($content, $path);
     } else {
         $php = $upgrader->upgradePhp($content, $path);
@@ -110,9 +126,9 @@ if (is_file($path)) {
             continue;
         }
 
-        if (isset($options['config-only'])) {
+        if ($flags['config-only']) {
             $result = $upgrader->upgradeConfig($content, $filePath);
-        } elseif (isset($options['code-only'])) {
+        } elseif ($flags['code-only']) {
             $result = $upgrader->upgradePhp($content, $filePath);
         } else {
             $php = $upgrader->upgradePhp($content, $filePath);
