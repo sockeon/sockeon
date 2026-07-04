@@ -64,6 +64,7 @@ final class CallArgumentParser
     }
 
     /**
+     * @param list<string> $args
      * @param list<int> $order Indexes into $args to emit
      */
     public static function join(array $args, array $order): string

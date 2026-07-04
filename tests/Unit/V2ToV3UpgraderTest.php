@@ -4,35 +4,35 @@ use Sockeon\Sockeon\Upgrade\V2ToV3Upgrader;
 
 test('upgrades server and controller API calls', function () {
     $source = <<<'PHP'
-<?php
+        <?php
 
-class ChatController extends SocketController
-{
-    public function handle(string $clientId, array $data): void
-    {
-        $server = $this->getServer();
-        $server->send($clientId, 'chat.message', $data);
-        $server->sendToClient($clientId, 'raw');
+        class ChatController extends SocketController
+        {
+            public function handle(string $clientId, array $data): void
+            {
+                $server = $this->getServer();
+                $server->send($clientId, 'chat.message', $data);
+                $server->sendToClient($clientId, 'raw');
 
-        $this->broadcastToRoomClients('chat.message', $data, $data['room'], '/chat');
-        $this->broadcastToNamespaceClients('announcement', $data, '/admin');
-        $this->broadcastToAll('ping', []);
-        $this->broadcastTo([$clientId], 'direct', $data);
-        $this->broadcastExcept([$clientId], 'others', $data);
-        $this->moveClientToNamespace($clientId, '/chat');
-        $this->getAllClients();
-        $this->disconnectClient($clientId);
-        $this->isClientConnected($clientId);
-        $this->getClientIpAddress($clientId);
-        $this->setClientData($clientId, 'name', 'Ada');
-        $name = $this->getClientData($clientId, 'name');
-        $bag = $this->getClientData($clientId);
-        $this->hasClientData($clientId, 'name');
+                $this->broadcastToRoomClients('chat.message', $data, $data['room'], '/chat');
+                $this->broadcastToNamespaceClients('announcement', $data, '/admin');
+                $this->broadcastToAll('ping', []);
+                $this->broadcastTo([$clientId], 'direct', $data);
+                $this->broadcastExcept([$clientId], 'others', $data);
+                $this->moveClientToNamespace($clientId, '/chat');
+                $this->getAllClients();
+                $this->disconnectClient($clientId);
+                $this->isClientConnected($clientId);
+                $this->getClientIpAddress($clientId);
+                $this->setClientData($clientId, 'name', 'Ada');
+                $name = $this->getClientData($clientId, 'name');
+                $bag = $this->getClientData($clientId);
+                $this->hasClientData($clientId, 'name');
 
-        $this->getServer()->getEngine()->send($clientId, 'payload');
-    }
-}
-PHP;
+                $this->getServer()->getEngine()->send($clientId, 'payload');
+            }
+        }
+        PHP;
 
     $upgrader = new V2ToV3Upgrader();
     $result = $upgrader->upgradePhp($source);
@@ -59,18 +59,18 @@ PHP;
 
 test('upgrades sockeon config defaults', function () {
     $source = <<<'PHP'
-<?php
+        <?php
 
-return [
-    'host' => '0.0.0.0',
-    'port' => 6001,
-    'debug' => false,
-    'rate_limit' => [
-        'enabled' => true,
-        'maxHttpRequestsPerIp' => 100,
-    ],
-];
-PHP;
+        return [
+            'host' => '0.0.0.0',
+            'port' => 6001,
+            'debug' => false,
+            'rate_limit' => [
+                'enabled' => true,
+                'maxHttpRequestsPerIp' => 100,
+            ],
+        ];
+        PHP;
 
     $upgrader = new V2ToV3Upgrader();
     $result = $upgrader->upgradeConfig($source, 'config/sockeon.php');

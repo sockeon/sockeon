@@ -45,13 +45,15 @@ final class V2ToV3Upgrader
         }
 
         if (!str_contains($content, "'survivability'") && !str_contains($content, '"survivability"')) {
-            $content = $this->insertAfterDebugLine($content, <<<'PHP'
+            $content = $this->insertAfterDebugLine(
+                $content,
+                <<<'PHP'
 
-    'engine' => 'stream_select',
-    'survivability' => [
-        'max_connections' => 10_000,
-    ],
-PHP
+                        'engine' => 'stream_select',
+                        'survivability' => [
+                            'max_connections' => 10_000,
+                        ],
+                    PHP
             );
             $this->changes[] = $path !== '' ? "Added engine/survivability to {$path}" : 'Added engine/survivability config';
         }
