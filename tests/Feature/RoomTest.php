@@ -51,7 +51,7 @@ test('messages can be broadcast to rooms', function () {
          * @return bool
          */
         #[SocketOn('broadcast.room')]
-        public function broadcastToRoom(string $clientId, array $data): bool
+        public function onBroadcastToRoom(string $clientId, array $data): bool
         {
             $this->broadcast('room.message', [
                 'message' => $data['message'] ?? '',
@@ -77,7 +77,7 @@ test('namespaces can be created and managed', function () {
          * @return bool
          */
         #[SocketOn('namespace.join')]
-        public function joinNamespace(string $clientId, array $data): bool
+        public function onJoinNamespace(string $clientId, array $data): bool
         {
             $this->joinRoom($clientId, 'room1', $data['namespace'] ?? '/');
             return true;
@@ -89,7 +89,7 @@ test('namespaces can be created and managed', function () {
          * @return bool
          */
         #[SocketOn('namespace.broadcast')]
-        public function broadcastToNamespace(string $clientId, array $data): bool
+        public function onBroadcastToNamespace(string $clientId, array $data): bool
         {
             $this->broadcast('message', [
                 'data' => $data['message'] ?? '',
@@ -153,7 +153,7 @@ test('rooms in different namespaces are isolated', function () {
          * @return bool
          */
         #[SocketOn('room.broadcast')]
-        public function broadcastToRoom(string $clientId, array $data): bool
+        public function onRoomBroadcast(string $clientId, array $data): bool
         {
             $this->broadcast('message', [
                 'data' => $data['message'] ?? '',

@@ -22,7 +22,6 @@ abstract class SocketController
 {
     /**
      * Instance of the server
-     * @var Server
      */
     private Server $server;
 
@@ -32,7 +31,6 @@ abstract class SocketController
      * This method is called by the server when registering the controller
      *
      * @param Server $server The server instance to set
-     * @return void
      */
     public function setServer(Server $server): void
     {
@@ -45,11 +43,21 @@ abstract class SocketController
      * @param string $clientId The ID of the client to send to
      * @param string $event The event name
      * @param array<string, mixed> $data The data to send
-     * @return void
      */
     public function emit(string $clientId, string $event, array $data): void
     {
-        $this->server->send($clientId, $event, $data);
+        $this->server->emit($clientId, $event, $data);
+    }
+
+    /**
+     * Sends a raw WebSocket payload to a specific client without event framing
+     *
+     * @param string $clientId The ID of the client to send to
+     * @param string $payload Raw message data
+     */
+    public function sendRaw(string $clientId, string $payload): void
+    {
+        $this->server->sendRaw($clientId, $payload);
     }
 
     /**
@@ -59,7 +67,6 @@ abstract class SocketController
      * @param array<string, mixed> $data The data to send
      * @param string|null $namespace Optional namespace to broadcast within
      * @param string|null $room Optional room to broadcast to
-     * @return void
      */
     public function broadcast(string $event, array $data, ?string $namespace = null, ?string $room = null): void
     {
@@ -67,36 +74,79 @@ abstract class SocketController
     }
 
     /**
-     * Broadcasts an event to specified clients
+     * Broadcasts an event to the given client IDs
      *
-     * @param list<string> $clients The array of the client ids to broadcast
      * @param string $event The event name
      * @param array<string, mixed> $data The data to send
-     * @return void
+     * @param list<string> $clientIds Client IDs to send to
      */
-    public function broadcastTo(array $clients, string $event, array $data): void
+    public function broadcastTo(string $event, array $data, array $clientIds): void
     {
-        foreach ($clients as $client) {
-            $this->emit($client, $event, $data);
+        foreach ($clientIds as $clientId) {
+            $this->emit($clientId, $event, $data);
         }
     }
 
     /**
-     * Broadcasts an event to all clients except the given ones
+     * Broadcasts an event to all connected clients except the given ones
      *
-     * @param list<string> $excepts The array of the client ids to ignore
      * @param string $event The event name
      * @param array<string, mixed> $data The data to send
-     * @return void
+     * @param list<string> $exceptClientIds Client IDs to exclude
      */
-    public function broadcastExcept(array $excepts, string $event, array $data): void
+    public function broadcastExcept(string $event, array $data, array $exceptClientIds): void
     {
-        $clients = $this->getAllClients();
-        foreach ($clients as $client) {
-            if (!in_array($client, $excepts)) {
-                $this->emit($client, $event, $data);
+        foreach ($this->getClientIds() as $clientId) {
+            if (!in_array($clientId, $exceptClientIds, true)) {
+                $this->emit($clientId, $event, $data);
             }
         }
+    }
+
+    /**
+     * Broadcasts an event to all clients in a specific namespace
+     *
+     * @param string $event The event name
+     * @param array<string, mixed> $data The data to send
+     * @param string $namespace The namespace to broadcast to
+     */
+    public function broadcastToNamespace(string $event, array $data, string $namespace): void
+    {
+        $this->server->broadcast($event, $data, $namespace);
+    }
+
+    /**
+     * Broadcasts an event to all clients in a specific room
+     *
+     * @param string $event The event name
+     * @param array<string, mixed> $data The data to send
+     * @param string $namespace The namespace containing the room
+     * @param string $room The room to broadcast to
+     */
+    public function broadcastToRoom(string $event, array $data, string $namespace, string $room): void
+    {
+        $this->server->broadcast($event, $data, $namespace, $room);
+    }
+
+    /**
+     * Joins a client to a namespace
+     *
+     * @param string $clientId The client ID to move
+     * @param string $namespace The namespace to join
+     */
+    public function joinNamespace(string $clientId, string $namespace = '/'): void
+    {
+        $this->server->getNamespaceManager()->joinNamespace($clientId, $namespace);
+    }
+
+    /**
+     * Removes a client from their current namespace
+     *
+     * @param string $clientId The client ID to remove
+     */
+    public function leaveNamespace(string $clientId): void
+    {
+        $this->server->getNamespaceManager()->leaveNamespace($clientId);
     }
 
     /**
@@ -104,8 +154,7 @@ abstract class SocketController
      *
      * @param string $clientId The ID of the client to add
      * @param string $room The room name
-     * @param string $namespace The namespace
-     * @return void
+     * @param string $namespace The namespace containing the room
      */
     public function joinRoom(string $clientId, string $room, string $namespace = '/'): void
     {
@@ -118,11 +167,20 @@ abstract class SocketController
      * @param string $clientId The ID of the client to remove
      * @param string $room The room name to leave
      * @param string $namespace The namespace containing the room
-     * @return void
      */
     public function leaveRoom(string $clientId, string $room, string $namespace = '/'): void
     {
         $this->server->leaveRoom($clientId, $room, $namespace);
+    }
+
+    /**
+     * Removes a client from all rooms they belong to
+     *
+     * @param string $clientId The client ID to remove from all rooms
+     */
+    public function leaveAllRooms(string $clientId): void
+    {
+        $this->server->getNamespaceManager()->leaveAllRooms($clientId);
     }
 
     /**
@@ -131,36 +189,73 @@ abstract class SocketController
      * Closes the connection and cleans up all client resources
      *
      * @param string $clientId The ID of the client to disconnect
-     * @return void
      */
-    public function disconnectClient(string $clientId): void
+    public function disconnect(string $clientId): void
     {
         $this->server->disconnectClient($clientId);
     }
 
     /**
-     * Gets data for a specific client
+     * Gets all arbitrary data attached to a client connection
      *
-     * @param string $clientId The ID of the client to get data for
-     * @param string|null $key Optional key to retrieve specific data
-     * @return mixed The data for the client, or null if not found
+     * @param string $clientId The client ID
+     * @return array<string, mixed>|null All stored data, or null if none
      */
-    public function getClientData(string $clientId, ?string $key = null): mixed
+    public function allData(string $clientId): ?array
+    {
+        $data = $this->server->getClientData($clientId);
+
+        return is_array($data) ? $data : null;
+    }
+
+    /**
+     * Gets a single value from a client's attached data
+     *
+     * @param string $clientId The client ID
+     * @param string $key The data key to retrieve
+     * @return mixed The stored value, or null if not found
+     */
+    public function data(string $clientId, string $key): mixed
     {
         return $this->server->getClientData($clientId, $key);
     }
 
     /**
-     * Sets data for a specific client
+     * Stores a value in a client's attached data
      *
-     * @param string $clientId The ID of the client to set data for
-     * @param string $key The key to set in the client's data
-     * @param mixed $value The value to set for the key
-     * @return void
+     * @param string $clientId The client ID
+     * @param string $key The data key to set
+     * @param mixed $value The value to store
      */
-    public function setClientData(string $clientId, string $key, mixed $value): void
+    public function putData(string $clientId, string $key, mixed $value): void
     {
         $this->server->setClientData($clientId, $key, $value);
+    }
+
+    /**
+     * Checks whether a client has a specific data key
+     *
+     * @param string $clientId The client ID
+     * @param string $key The data key to check
+     */
+    public function hasData(string $clientId, string $key): bool
+    {
+        $stored = $this->server->getClientData($clientId);
+
+        return is_array($stored) && array_key_exists($key, $stored);
+    }
+
+    /**
+     * Removes data from a client connection
+     *
+     * When $key is null, all data for the client is removed.
+     *
+     * @param string $clientId The client ID
+     * @param string|null $key Optional key to remove; omit to clear all data
+     */
+    public function forgetData(string $clientId, ?string $key = null): void
+    {
+        $this->server->forgetClientData($clientId, $key);
     }
 
     /**
@@ -183,18 +278,6 @@ abstract class SocketController
     public function getClientNamespace(string $clientId): string
     {
         return $this->server->getNamespaceManager()->getClientNamespace($clientId);
-    }
-
-    /**
-     * Joins a client to a specific namespace
-     *
-     * @param string $clientId The client ID to move
-     * @param string $namespace The namespace to join
-     * @return void
-     */
-    public function moveClientToNamespace(string $clientId, string $namespace = '/'): void
-    {
-        $this->server->getNamespaceManager()->joinNamespace($clientId, $namespace);
     }
 
     /**
@@ -232,61 +315,11 @@ abstract class SocketController
     }
 
     /**
-     * Removes a client from all rooms they belong to
-     *
-     * @param string $clientId The client ID to remove from all rooms
-     * @return void
-     */
-    public function leaveAllRooms(string $clientId): void
-    {
-        $this->server->getNamespaceManager()->leaveAllRooms($clientId);
-    }
-
-    /**
-     * Broadcasts an event to all clients in a specific namespace
-     *
-     * @param string $event The event name
-     * @param array<string, mixed> $data The data to send
-     * @param string $namespace The namespace to broadcast to
-     * @return void
-     */
-    public function broadcastToNamespaceClients(string $event, array $data, string $namespace): void
-    {
-        $this->server->broadcast($event, $data, $namespace);
-    }
-
-    /**
-     * Broadcasts an event to all clients in a specific room
-     *
-     * @param string $event The event name
-     * @param array<string, mixed> $data The data to send
-     * @param string $room The room to broadcast to
-     * @param string $namespace The namespace containing the room (default: '/')
-     * @return void
-     */
-    public function broadcastToRoomClients(string $event, array $data, string $room, string $namespace = '/'): void
-    {
-        $this->server->broadcast($event, $data, $namespace, $room);
-    }
-
-    /**
-     * Broadcasts an event to all connected clients
-     *
-     * @param string $event The event name
-     * @param array<string, mixed> $data The data to send
-     * @return void
-     */
-    public function broadcastToAll(string $event, array $data): void
-    {
-        $this->server->broadcast($event, $data);
-    }
-
-    /**
      * Gets all connected client IDs
      *
      * @return list<string> Array of all connected client IDs
      */
-    public function getAllClients(): array
+    public function getClientIds(): array
     {
         return $this->server->getClientIds();
     }
@@ -307,7 +340,7 @@ abstract class SocketController
      * @param string $clientId The client ID to check
      * @return bool True if the client is connected, false otherwise
      */
-    public function isClientConnected(string $clientId): bool
+    public function isConnected(string $clientId): bool
     {
         return $this->server->isClientConnected($clientId);
     }
@@ -321,6 +354,17 @@ abstract class SocketController
     public function getClientType(string $clientId): ?string
     {
         return $this->server->getClientType($clientId);
+    }
+
+    /**
+     * Gets the IP address of a client
+     *
+     * @param string $clientId The client ID
+     * @return string|null The client IP address or null if not found
+     */
+    public function getClientIp(string $clientId): ?string
+    {
+        return $this->server->getClientIpAddress($clientId);
     }
 
     /**
@@ -412,7 +456,6 @@ abstract class SocketController
      * @param string $type Task type
      * @param array<string, mixed> $data Task data
      * @param int $priority Priority level (higher = more important)
-     * @return void
      */
     public function queueAsyncTask(string $type, array $data, int $priority = 0): void
     {
@@ -468,22 +511,10 @@ abstract class SocketController
     }
 
     /**
-     * Get client IP address
-     *
-     * @param string $clientId The client ID
-     * @return string|null The client IP address or null if not found
-     */
-    public function getClientIpAddress(string $clientId): ?string
-    {
-        return $this->server->getClientIpAddress($clientId);
-    }
-
-    /**
      * Record a performance metric
      *
      * @param string $type Metric type (http/websocket/connection/request)
      * @param float $value Metric value (response time, etc.)
-     * @return void
      */
     public function recordMetric(string $type, float $value = 0): void
     {
@@ -494,7 +525,6 @@ abstract class SocketController
      * Record an error metric
      *
      * @param string $type Error type (connection/request)
-     * @return void
      */
     public function recordError(string $type): void
     {

@@ -81,7 +81,7 @@ trait HandlesQueue
         $data = is_array($payload['data'] ?? null) ? $payload['data'] : [];
 
         if ($clientId !== '' && $event !== '') {
-            $this->send($clientId, $event, $data);
+            $this->emit($clientId, $event, $data);
         } else {
             $this->logger->warning("[Queue] Invalid emit payload");
         }

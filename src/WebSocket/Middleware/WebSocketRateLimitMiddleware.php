@@ -266,7 +266,7 @@ class WebSocketRateLimitMiddleware implements WebsocketMiddleware
 
         $jsonMessage = json_encode($message);
         if ($jsonMessage !== false) {
-            $server->sendToClient($clientId, $jsonMessage);
+            $server->sendRaw($clientId, $jsonMessage);
         }
     }
 
@@ -296,7 +296,7 @@ class WebSocketRateLimitMiddleware implements WebsocketMiddleware
 
         $jsonMessage = json_encode($message);
         if ($jsonMessage !== false) {
-            $server->sendToClient($clientId, $jsonMessage);
+            $server->sendRaw($clientId, $jsonMessage);
         }
     }
 

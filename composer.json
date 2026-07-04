@@ -54,5 +54,8 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true
         }
-    }
+    },
+    "bin": [
+        "bin/sockeon-upgrade"
+    ]
 }
