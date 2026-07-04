@@ -27,3 +27,4 @@
 /.php-cs-fixer.cache export-ignore
 /.php-cs-fixer.dist.php export-ignore
 /.github export-ignore
+/benchmark export-ignore

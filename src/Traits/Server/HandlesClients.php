@@ -702,7 +702,7 @@ trait HandlesClients
             'task_queue' => $this->taskQueue->getStats(),
             'server_info' => [
                 'uptime' => $this->performanceMonitor->getFormattedUptime(),
-                'active_clients' => count($this->clients),
+                'active_clients' => $this->getClientCount(),
                 'client_types' => array_count_values($this->clientTypes),
                 'pending_tasks' => $this->taskQueue->getPendingCount(),
                 'memory_usage_mb' => round(memory_get_usage(true) / 1024 / 1024, 2),

@@ -18,8 +18,8 @@ phpcs: ## Run PHP CS Fixer in dry-run mode
 phpcs-fix: ## Run PHP CS Fixer and fix issues
 	vendor/bin/php-cs-fixer fix
 
-pest: ## Run Pest tests
-	php -d extension=igbinary -d extension=redis vendor/bin/pest
+pest: ## Run Pest tests (framework + benchmark)
+	php -d extension=igbinary -d extension=redis vendor/bin/pest tests benchmark
 
 test: ## Run all tests and checks
 	@echo "Running PHPStan..."
