@@ -14,25 +14,25 @@ function benchUsage(): void
 {
     $script = basename(__FILE__);
     fwrite(STDERR, <<<TXT
-Sockeon benchmark harness
+        Sockeon benchmark harness
 
-Usage:
-  php {$script} connections [--host=127.0.0.1] [--port=PORT] [--total=200] [--workers=4]
-  php {$script} throughput [--host=127.0.0.1] [--port=PORT] [--messages=5000]
-  php {$script} latency    [--host=127.0.0.1] [--port=PORT] [--samples=200]
-  php {$script} http       [--host=127.0.0.1] [--port=PORT] [--duration=10] [--threads=4]
-  php {$script} soak       [--host=127.0.0.1] [--port=PORT] [--total=200] [--workers=4] [--hold=30] [--sample=0] [--resources=0]
-  php {$script} broadcast  [--host=127.0.0.1] [--port=PORT] [--clients=50] [--room=bench]
-  php {$script} sustained  [--host=127.0.0.1] [--port=PORT] [--duration=10]
-  php {$script} concurrent [--host=127.0.0.1] [--port=PORT] [--senders=8] [--duration=10]
-  php {$script} handled    [--host=127.0.0.1] [--port=PORT] [--samples=200]
-  php {$script} db         [--host=127.0.0.1] [--port=PORT] [--samples=200]
-  php {$script} resources  [--host=127.0.0.1] [--port=PORT]
-  php {$script} multinode  [--host=127.0.0.1] [--port=PORT] [--port2=PORT] [--clients=20] [--room=multinode]
+        Usage:
+          php {$script} connections [--host=127.0.0.1] [--port=PORT] [--total=200] [--workers=4]
+          php {$script} throughput [--host=127.0.0.1] [--port=PORT] [--messages=5000]
+          php {$script} latency    [--host=127.0.0.1] [--port=PORT] [--samples=200]
+          php {$script} http       [--host=127.0.0.1] [--port=PORT] [--duration=10] [--threads=4]
+          php {$script} soak       [--host=127.0.0.1] [--port=PORT] [--total=200] [--workers=4] [--hold=30] [--sample=0] [--resources=0]
+          php {$script} broadcast  [--host=127.0.0.1] [--port=PORT] [--clients=50] [--room=bench]
+          php {$script} sustained  [--host=127.0.0.1] [--port=PORT] [--duration=10]
+          php {$script} concurrent [--host=127.0.0.1] [--port=PORT] [--senders=8] [--duration=10]
+          php {$script} handled    [--host=127.0.0.1] [--port=PORT] [--samples=200]
+          php {$script} db         [--host=127.0.0.1] [--port=PORT] [--samples=200]
+          php {$script} resources  [--host=127.0.0.1] [--port=PORT]
+          php {$script} multinode  [--host=127.0.0.1] [--port=PORT] [--port2=PORT] [--clients=20] [--room=multinode]
 
-Server profiles (bench server 5th arg bind, 4th profile): default, handled, scaled, node-a, node-b, realistic
+        Server profiles (bench server 5th arg bind, 4th profile): default, handled, scaled, node-a, node-b, realistic
 
-TXT);
+        TXT);
     exit(1);
 }
 
