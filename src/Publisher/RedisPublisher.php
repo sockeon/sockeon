@@ -14,6 +14,8 @@ class RedisPublisher implements PublisherInterface
 
     private bool $subscriberStarted = false;
 
+    private ?\Swoole\Server $swooleServer = null;
+
     public function __construct(
         private LocalPublisher $localPublisher,
         private ScaleConfig $config,
@@ -36,7 +38,34 @@ class RedisPublisher implements PublisherInterface
             'namespace' => $namespace,
             'room' => $room,
             'originNodeId' => $this->config->getNodeId(),
+            'originWorkerId' => $this->originWorkerId(),
         ], JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Whether a worker should deliver a pipe-relayed broadcast.
+     *
+     * @internal
+     */
+    public static function shouldRelayPipeBroadcast(
+        string $localNodeId,
+        int $localWorkerId,
+        string $originNodeId,
+        ?int $originWorkerId,
+    ): bool {
+        if ($originNodeId === '') {
+            return false;
+        }
+
+        if ($originNodeId !== $localNodeId) {
+            return true;
+        }
+
+        if ($originWorkerId === null) {
+            return false;
+        }
+
+        return $originWorkerId !== $localWorkerId;
     }
 
     public function start(): void
@@ -52,6 +81,8 @@ class RedisPublisher implements PublisherInterface
 
     public function registerSwooleSubscriber(\Swoole\Server $server): void
     {
+        $this->swooleServer = $server;
+
         if ($this->subscriberStarted) {
             return;
         }
@@ -90,7 +121,15 @@ class RedisPublisher implements PublisherInterface
             }
 
             $originNodeId = $payload['originNodeId'] ?? '';
-            if (!is_string($originNodeId) || $originNodeId === '' || $originNodeId === $nodeId) {
+            if (!is_string($originNodeId)) {
+                return;
+            }
+
+            $originWorkerId = array_key_exists('originWorkerId', $payload)
+                ? (int) $payload['originWorkerId']
+                : null;
+
+            if (!self::shouldRelayPipeBroadcast($nodeId, $workerId, $originNodeId, $originWorkerId)) {
                 return;
             }
 
@@ -106,5 +145,14 @@ class RedisPublisher implements PublisherInterface
 
             $localPublisher->broadcast($event, $eventData, $namespace, $room);
         });
+    }
+
+    private function originWorkerId(): int
+    {
+        if ($this->swooleServer !== null) {
+            return (int) ($this->swooleServer->worker_id ?? 0);
+        }
+
+        return 0;
     }
 }

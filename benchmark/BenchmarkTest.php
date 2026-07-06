@@ -290,6 +290,42 @@ test('benchmark parallel broadcast fans out with setup workers', function () {
     }
 })->group('benchmark', 'swoole');
 
+test('benchmark scaled multi-worker broadcast fans out across swoole workers', function () {
+    if (!function_exists('pcntl_fork')) {
+        $this->markTestSkipped('pcntl extension required');
+    }
+
+    if (!extension_loaded('redis')) {
+        $this->markTestSkipped('ext-redis not available');
+    }
+
+    if (!class_exists(\Swoole\WebSocket\Server::class)) {
+        $this->markTestSkipped('Swoole extension required');
+    }
+
+    try {
+        $redis = new Redis();
+        $redis->connect('127.0.0.1', 6379, 1.0);
+        expect($redis->ping())->toBeTrue();
+    } catch (Throwable $e) {
+        $this->markTestSkipped('Redis not reachable: ' . $e->getMessage());
+    }
+
+    [$port, $process] = startBenchServer('swoole', 'scaled');
+    usleep(2_000_000);
+
+    try {
+        $output = runBenchCommand('broadcast', $port, [
+            'clients' => 12,
+            'setup_workers' => 3,
+            'room' => 'scaled-bench',
+        ]);
+        expect($output)->toContain('delivered=11/11');
+    } finally {
+        stopBenchServer($process);
+    }
+})->group('benchmark', 'swoole', 'redis');
+
 test('benchmark multinode redis broadcast reaches remote node', function () {
     if (!function_exists('pcntl_fork')) {
         $this->markTestSkipped('pcntl extension required');

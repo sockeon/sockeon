@@ -107,6 +107,16 @@ class SwooleEngine implements EngineInterface
             $this->startWorkerTimers($workerId);
         });
 
+        if ($this->config->getTaskWorkerNum() > 0) {
+            $server->on('Task', function (\Swoole\Server $server, \Swoole\Server\Task $task): mixed {
+                return $this->handleTask($task);
+            });
+
+            $server->on('Finish', function (\Swoole\Server $server, int $taskId, mixed $data): void {
+                $this->handleTaskFinish($taskId, $data);
+            });
+        }
+
         $publisher = $this->server->getPublisher();
         if ($publisher instanceof RedisPublisher) {
             $publisher->registerSwooleSubscriber($server);
@@ -433,6 +443,32 @@ class SwooleEngine implements EngineInterface
         }
 
         $callback();
+    }
+
+    protected function handleTask(\Swoole\Server\Task $task): mixed
+    {
+        $data = $task->data;
+
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $type = $data['type'] ?? null;
+
+        if (! is_string($type) || $type === '') {
+            return false;
+        }
+
+        $payload = is_array($data['payload'] ?? null) ? $data['payload'] : [];
+
+        return $this->server->processSwooleTask($type, $payload);
+    }
+
+    protected function handleTaskFinish(int $taskId, mixed $data): void
+    {
+        if ($data === false) {
+            $this->server->getLogger()->warning('[Sockeon Task] Task failed', ['task_id' => $taskId]);
+        }
     }
 
     protected function getClientIpFromRequest(\Swoole\Http\Request $request): ?string
