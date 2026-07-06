@@ -100,6 +100,26 @@ class AsyncTaskQueue
     }
 
     /**
+     * Run a registered processor immediately (Swoole task worker path).
+     *
+     * @param array<string, mixed> $data
+     */
+    public function runProcessor(string $type, array $data): bool
+    {
+        if (! isset($this->processors[$type])) {
+            return false;
+        }
+
+        return $this->processTask([
+            'id' => uniqid('task_', true),
+            'type' => $type,
+            'data' => $data,
+            'queued_at' => microtime(true),
+            'attempts' => 0,
+        ]);
+    }
+
+    /**
      * Process queued tasks
      *
      * @return int Number of tasks processed

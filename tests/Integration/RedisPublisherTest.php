@@ -101,5 +101,6 @@ test('redis publisher publishes cross-node broadcast payload', function () {
         ->and($payload['data']['message'] ?? null)->toBe('hello')
         ->and($payload['namespace'] ?? null)->toBe('/')
         ->and($payload['room'] ?? null)->toBe('lobby')
-        ->and($payload['originNodeId'] ?? null)->toBe('node-a');
+        ->and($payload['originNodeId'] ?? null)->toBe('node-a')
+        ->and($payload['originWorkerId'] ?? null)->toBe(0);
 });

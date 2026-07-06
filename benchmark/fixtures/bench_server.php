@@ -118,11 +118,11 @@ final class BenchTraceMiddleware implements WebsocketMiddleware
 /**
  * @return array<string, mixed>
  */
-function benchRedisScaleConfig(string $nodeId): array
+function benchRedisScaleConfig(string $nodeId, bool $sharedRegistry = true): array
 {
     return [
         'node_id' => $nodeId,
-        'registry' => 'redis',
+        'registry' => $sharedRegistry ? 'redis' : 'local',
         'publisher' => 'redis',
         'redis' => [
             'database' => 15,
@@ -164,7 +164,7 @@ $configArray = [
 ];
 
 $configArray['scale'] = match ($profile) {
-    'scaled' => benchRedisScaleConfig('bench-node-1'),
+    'scaled' => benchRedisScaleConfig('bench-node-1', false),
     'node-a' => benchRedisScaleConfig('bench-node-a'),
     'node-b' => benchRedisScaleConfig('bench-node-b'),
     default => null,
@@ -192,7 +192,7 @@ if ($profile === 'realistic') {
     $server->registerController(new BenchDbController());
 }
 
-if (in_array($profile, ['scaled', 'node-a', 'node-b'], true)) {
+if (in_array($profile, ['node-a', 'node-b'], true)) {
     $server->registerController(new BenchPresenceController());
 }
 

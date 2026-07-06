@@ -710,6 +710,14 @@ trait HandlesClients
     }
 
     /**
+     * @param array<string, mixed> $payload
+     */
+    public function processSwooleTask(string $type, array $payload): bool
+    {
+        return $this->taskQueue->runProcessor($type, $payload);
+    }
+
+    /**
      * Get comprehensive server statistics
      *
      * @return array<string, mixed>
