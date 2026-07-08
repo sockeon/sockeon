@@ -126,16 +126,19 @@ class StreamSelectEngine implements EngineInterface
                     fn($client) => is_resource($client)
                 );
                 $readSockets[] = $this->socket;
-                /** @var array<resource> $read */
-                $read = $readSockets;
-
-                $write = $except = null;
 
                 $clientCount = count($readSockets) - 1;
                 $timeoutSeconds = 0;
                 $timeoutMicroseconds = $clientCount === 0 ? 100000 : 10000;
 
-                $selectResult = stream_select($read, $write, $except, $timeoutSeconds, $timeoutMicroseconds);
+                do {
+                    $read = $readSockets;
+                    $write = $except = null;
+                    $selectResult = @stream_select($read, $write, $except, $timeoutSeconds, $timeoutMicroseconds);
+                } while (
+                    $selectResult === false
+                    && str_contains(error_get_last()['message'] ?? '', 'Interrupted system call')
+                );
 
                 if ($selectResult === false) {
                     $this->server->getLogger()->error('[Sockeon Engine] stream_select failed', [
