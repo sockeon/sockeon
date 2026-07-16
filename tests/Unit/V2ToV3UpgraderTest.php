@@ -28,6 +28,10 @@ test('upgrades server and controller API calls', function () {
                 $name = $this->getClientData($clientId, 'name');
                 $bag = $this->getClientData($clientId);
                 $this->hasClientData($clientId, 'name');
+                $server->setClientData($clientId, 'role', 'admin');
+                $role = $server->getClientData($clientId, 'role');
+                $serverBag = $server->getClientData($clientId);
+                $server->forgetClientData($clientId, 'role');
 
                 $this->getServer()->getEngine()->send($clientId, 'payload');
             }
@@ -54,6 +58,10 @@ test('upgrades server and controller API calls', function () {
         ->toContain("\$this->data(\$clientId, 'name')")
         ->toContain('$this->allData($clientId)')
         ->toContain('$this->hasData(')
+        ->toContain('$server->putData(')
+        ->toContain("\$server->data(\$clientId, 'role')")
+        ->toContain('$server->allData($clientId)')
+        ->toContain('$server->forgetData(')
         ->toContain("getEngine()->send(\$clientId, 'payload')");
 });
 

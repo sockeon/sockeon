@@ -485,7 +485,47 @@ trait HandlesClients
         }
     }
 
-    public function setClientData(string $clientId, string $key, mixed $value): void
+    /**
+     * Gets all arbitrary data attached to a client connection
+     *
+     * @param string $clientId The client ID
+     * @return array<string, mixed>|null All stored data, or null if none
+     */
+    public function allData(string $clientId): ?array
+    {
+        if ($this->redisClientDataStore !== null) {
+            $data = $this->redisClientDataStore->get($clientId);
+
+            return is_array($data) ? $data : null;
+        }
+
+        return $this->clientData[$clientId] ?? null;
+    }
+
+    /**
+     * Gets a single value from a client's attached data
+     *
+     * @param string $clientId The client ID
+     * @param string $key The data key to retrieve
+     * @return mixed The stored value, or null if not found
+     */
+    public function data(string $clientId, string $key): mixed
+    {
+        if ($this->redisClientDataStore !== null) {
+            return $this->redisClientDataStore->get($clientId, $key);
+        }
+
+        return $this->clientData[$clientId][$key] ?? null;
+    }
+
+    /**
+     * Stores a value in a client's attached data
+     *
+     * @param string $clientId The client ID
+     * @param string $key The data key to set
+     * @param mixed $value The value to store
+     */
+    public function putData(string $clientId, string $key, mixed $value): void
     {
         if ($this->redisClientDataStore !== null) {
             $this->redisClientDataStore->set($clientId, $key, $value);
@@ -496,20 +536,28 @@ trait HandlesClients
         $this->clientData[$clientId][$key] = $value;
     }
 
-    public function getClientData(string $clientId, ?string $key = null): mixed
+    /**
+     * Checks whether a client has a specific data key
+     *
+     * @param string $clientId The client ID
+     * @param string $key The data key to check
+     */
+    public function hasData(string $clientId, string $key): bool
     {
-        if ($this->redisClientDataStore !== null) {
-            return $this->redisClientDataStore->get($clientId, $key);
-        }
+        $stored = $this->allData($clientId);
 
-        if ($key === null) {
-            return $this->clientData[$clientId] ?? null;
-        }
-
-        return $this->clientData[$clientId][$key] ?? null;
+        return is_array($stored) && array_key_exists($key, $stored);
     }
 
-    public function forgetClientData(string $clientId, ?string $key = null): void
+    /**
+     * Removes data from a client connection
+     *
+     * When $key is null, all data for the client is removed.
+     *
+     * @param string $clientId The client ID
+     * @param string|null $key Optional key to remove; omit to clear all data
+     */
+    public function forgetData(string $clientId, ?string $key = null): void
     {
         if ($this->redisClientDataStore !== null) {
             $this->redisClientDataStore->forget($clientId, $key);

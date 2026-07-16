@@ -203,9 +203,7 @@ abstract class SocketController
      */
     public function allData(string $clientId): ?array
     {
-        $data = $this->server->getClientData($clientId);
-
-        return is_array($data) ? $data : null;
+        return $this->server->allData($clientId);
     }
 
     /**
@@ -217,7 +215,7 @@ abstract class SocketController
      */
     public function data(string $clientId, string $key): mixed
     {
-        return $this->server->getClientData($clientId, $key);
+        return $this->server->data($clientId, $key);
     }
 
     /**
@@ -229,7 +227,7 @@ abstract class SocketController
      */
     public function putData(string $clientId, string $key, mixed $value): void
     {
-        $this->server->setClientData($clientId, $key, $value);
+        $this->server->putData($clientId, $key, $value);
     }
 
     /**
@@ -240,9 +238,7 @@ abstract class SocketController
      */
     public function hasData(string $clientId, string $key): bool
     {
-        $stored = $this->server->getClientData($clientId);
-
-        return is_array($stored) && array_key_exists($key, $stored);
+        return $this->server->hasData($clientId, $key);
     }
 
     /**
@@ -255,7 +251,7 @@ abstract class SocketController
      */
     public function forgetData(string $clientId, ?string $key = null): void
     {
-        $this->server->forgetClientData($clientId, $key);
+        $this->server->forgetData($clientId, $key);
     }
 
     /**
