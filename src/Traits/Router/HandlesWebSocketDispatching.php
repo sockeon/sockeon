@@ -22,31 +22,35 @@ trait HandlesWebSocketDispatching
      * @param string $clientId The client identifier
      * @param string $event The event name
      * @param array<string, mixed> $data The event data
-     * @return void
+     * @return bool True when a matching handler was dispatched
      */
-    public function dispatch(string $clientId, string $event, array $data): void
+    public function dispatch(string $clientId, string $event, array $data): bool
     {
-        if (isset($this->wsRoutes[$event])) {
-            [$controller, $method, $middlewares, $excludeGlobalMiddlewares] = $this->wsRoutes[$event];
-
-            $this->validateWebsocketMiddlewares($middlewares);
-
-            if ($this->server) {
-                $this->server->getMiddleware()->runWebSocketStack(
-                    $clientId,
-                    $event,
-                    $data,
-                    function ($clientId, $data) use ($controller, $method) {
-                        return $controller->$method($clientId, $data);
-                    },
-                    $this->server,
-                    $middlewares,
-                    $excludeGlobalMiddlewares
-                );
-            } else {
-                $controller->$method($clientId, $data);
-            }
+        if (!isset($this->wsRoutes[$event])) {
+            return false;
         }
+
+        [$controller, $method, $middlewares, $excludeGlobalMiddlewares] = $this->wsRoutes[$event];
+
+        $this->validateWebsocketMiddlewares($middlewares);
+
+        if ($this->server) {
+            $this->server->getMiddleware()->runWebSocketStack(
+                $clientId,
+                $event,
+                $data,
+                function ($clientId, $data) use ($controller, $method) {
+                    return $controller->$method($clientId, $data);
+                },
+                $this->server,
+                $middlewares,
+                $excludeGlobalMiddlewares
+            );
+        } else {
+            $controller->$method($clientId, $data);
+        }
+
+        return true;
     }
 
     /**
