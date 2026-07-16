@@ -78,9 +78,7 @@ test('returns an error event when emitting an unknown websocket event', function
 
     $controller = new class extends SocketController {
         #[SocketOn('known.event')]
-        public function handleKnownEvent(string $clientId, array $data): void
-        {
-        }
+        public function handleKnownEvent(string $clientId, array $data): void {}
     };
     $server->registerController($controller);
 
