@@ -23,7 +23,7 @@ final class V2ToV3Upgrader
         $content = $this->reorderMethodArguments($content, 'broadcastTo', [1, 2, 0]);
         $content = $this->reorderMethodArguments($content, 'broadcastExcept', [1, 2, 0]);
         $content = $this->reorderMethodArguments($content, 'broadcastToRoom', [0, 1, 3, 2]);
-        $content = $this->rewriteControllerGetClientDataCalls($content);
+        $content = $this->rewriteGetClientDataCalls($content);
 
         if ($content !== $original) {
             $this->changes[] = $path !== '' ? "Updated API calls in {$path}" : 'Updated API calls';
@@ -232,8 +232,9 @@ final class V2ToV3Upgrader
             '/\$this->disconnectClient\(/' => '$this->disconnect(',
             '/\$this->isClientConnected\(/' => '$this->isConnected(',
             '/\$this->getClientIpAddress\(/' => '$this->getClientIp(',
-            '/\$this->setClientData\(/' => '$this->putData(',
-            '/\$this->hasClientData\(/' => '$this->hasData(',
+            '/->setClientData\(/' => '->putData(',
+            '/->hasClientData\(/' => '->hasData(',
+            '/->forgetClientData\(/' => '->forgetData(',
         ];
 
         foreach ($map as $pattern => $replacement) {
@@ -297,31 +298,33 @@ final class V2ToV3Upgrader
         return $content;
     }
 
-    private function rewriteControllerGetClientDataCalls(string $content): string
+    private function rewriteGetClientDataCalls(string $content): string
     {
-        $search = '$this->getClientData(';
-        $offset = 0;
+        foreach (['$this->getClientData(', '$server->getClientData('] as $search) {
+            $replacementPrefix = str_replace('getClientData(', '', $search);
+            $offset = 0;
 
-        while (($pos = strpos($content, $search, $offset)) !== false) {
-            $openParen = $pos + strlen($search) - 1;
-            $closeParen = $this->findClosingParen($content, $openParen);
-            if ($closeParen === null) {
-                $offset = $pos + 1;
-                continue;
+            while (($pos = strpos($content, $search, $offset)) !== false) {
+                $openParen = $pos + strlen($search) - 1;
+                $closeParen = $this->findClosingParen($content, $openParen);
+                if ($closeParen === null) {
+                    $offset = $pos + 1;
+                    continue;
+                }
+
+                $argsStart = $openParen + 1;
+                $argsString = substr($content, $argsStart, $closeParen - $argsStart);
+                $args = CallArgumentParser::split($argsString);
+
+                $replacement = match (count($args)) {
+                    1 => $replacementPrefix . 'allData(' . $args[0] . ')',
+                    2 => $replacementPrefix . 'data(' . implode(', ', $args) . ')',
+                    default => $search . $argsString . ')',
+                };
+
+                $content = substr($content, 0, $pos) . $replacement . substr($content, $closeParen + 1);
+                $offset = $pos + strlen($replacement);
             }
-
-            $argsStart = $openParen + 1;
-            $argsString = substr($content, $argsStart, $closeParen - $argsStart);
-            $args = CallArgumentParser::split($argsString);
-
-            $replacement = match (count($args)) {
-                1 => '$this->allData(' . $args[0] . ')',
-                2 => '$this->data(' . implode(', ', $args) . ')',
-                default => '$this->getClientData(' . $argsString . ')',
-            };
-
-            $content = substr($content, 0, $pos) . $replacement . substr($content, $closeParen + 1);
-            $offset = $pos + strlen($replacement);
         }
 
         return $content;
