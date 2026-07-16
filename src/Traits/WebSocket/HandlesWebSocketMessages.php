@@ -86,7 +86,13 @@ trait HandlesWebSocketMessages
             ]);
 
             $router = $this->server->getRouter();
-            $router->dispatch($clientId, $event, $data);
+            if (!$router->dispatch($clientId, $event, $data)) {
+                $this->server->getLogger()->warning("Unknown WebSocket event received from client: $clientId", [
+                    'event' => $event,
+                    'client_id' => $clientId,
+                ]);
+                $this->sendErrorMessage($clientId, "Event '{$event}' does not exist");
+            }
         } catch (Throwable $e) {
             $this->server->getLogger()->exception($e, [
                 'clientId' => $clientId,

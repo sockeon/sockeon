@@ -3,8 +3,10 @@
 use Sockeon\Sockeon\WebSocket\Handler;
 use Sockeon\Sockeon\Connection\Server;
 use Sockeon\Sockeon\Config\ServerConfig;
+use Sockeon\Sockeon\Controllers\SocketController;
 use Sockeon\Sockeon\Logging\Logger;
 use Sockeon\Sockeon\Core\Router;
+use Sockeon\Sockeon\WebSocket\Attributes\SocketOn;
 
 beforeEach(function () {
     $this->handler = new Handler($this->server);
@@ -68,6 +70,53 @@ test('accepts valid messages with complex data structure', function () {
 
     $this->handler->handleMessage(1, $validMessage);
     expect(true)->toBeTrue();
+});
+
+test('returns an error event when emitting an unknown websocket event', function () {
+    /** @var Server $server */
+    $server = $this->server; //@phpstan-ignore-line
+
+    $controller = new class extends SocketController {
+        #[SocketOn('known.event')]
+        public function handleKnownEvent(string $clientId, array $data): void {}
+    };
+    $server->registerController($controller);
+
+    $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+    expect($pair)->not->toBeFalse();
+
+    [$clientSocket, $peerSocket] = $pair;
+
+    $reflection = new ReflectionClass($server);
+
+    $clientsProperty = $reflection->getProperty('clients');
+    $clients = $clientsProperty->getValue($server);
+    $clients['test-client'] = $clientSocket;
+    $clientsProperty->setValue($server, $clients);
+
+    $clientTypesProperty = $reflection->getProperty('clientTypes');
+    $clientTypes = $clientTypesProperty->getValue($server);
+    $clientTypes['test-client'] = 'ws';
+    $clientTypesProperty->setValue($server, $clientTypes);
+
+    $this->handler->handleMessage('test-client', json_encode([
+        'event' => 'missing.event',
+        'data' => [],
+    ]));
+
+    $responseFrame = fread($peerSocket, 8192);
+    expect($responseFrame)->not->toBeFalse()->not->toBe('');
+
+    [$frames] = $this->handler->decodeWebSocketFrame($responseFrame);
+    expect($frames)->toHaveCount(1);
+
+    $response = json_decode($frames[0]['payload'], true);
+    expect($response)->toBeArray()
+        ->and($response['event'] ?? null)->toBe('error')
+        ->and($response['data']['message'] ?? null)->toBe("Event 'missing.event' does not exist");
+
+    fclose($clientSocket);
+    fclose($peerSocket);
 });
 
 test('handles ping frames correctly', function () {
